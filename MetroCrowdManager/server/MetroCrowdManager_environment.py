@@ -8,7 +8,7 @@
 MetroCrowdManager Environment Implementation.
 
 A stateful metro station crowd management environment where an AI agent
-produces redirection announcements evaluated across 7 reward dimensions.
+produces redirection announcements evaluated across 10 reward dimensions.
 Supports 3 tasks with progressive difficulty:
   - crowd_assessment (easy):  single-step color code mapping
   - redirection (medium):     single-step full announcement
@@ -32,8 +32,11 @@ try:
     from .rewards import (
         compute_clarity,
         compute_color_grading,
+        compute_conservation_accuracy,
+        compute_distribution_accuracy,
+        compute_factual_accuracy,
+        compute_feasibility_accuracy,
         compute_language_consistency,
-        compute_math_accuracy,
         compute_noop_detection,
         compute_politeness,
         compute_sequential_direction,
@@ -42,8 +45,11 @@ except ImportError:
     from rewards import (
         compute_clarity,
         compute_color_grading,
+        compute_conservation_accuracy,
+        compute_distribution_accuracy,
+        compute_factual_accuracy,
+        compute_feasibility_accuracy,
         compute_language_consistency,
-        compute_math_accuracy,
         compute_noop_detection,
         compute_politeness,
         compute_sequential_direction,
@@ -69,8 +75,12 @@ STATION_NAMES = [
     "South Gate",
 ]
 
-COACH_LABELS = ["A", "B", "C", "D", "E", "F"]
-NUM_COACHES = 6
+NUM_COACHES = 10
+
+
+def _coach_labels(num_coaches: int) -> List[str]:
+    """Generate coach labels A, B, C, ... dynamically."""
+    return [chr(ord("A") + i) for i in range(num_coaches)]
 
 TASK_CONFIG = {
     "crowd_assessment": {"max_steps": 1},
@@ -188,7 +198,7 @@ class MetrocrowdmanagerEnvironment(Environment):
 
     The agent receives train coach occupancy and platform zone crowd
     percentages, then produces structured redirection responses evaluated
-    across 7 reward dimensions.
+    across 10 reward dimensions.
 
     Tasks:
         crowd_assessment (easy):  Map crowd percentages to hex color codes.
@@ -203,6 +213,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._task_name = "crowd_assessment"
         self._max_steps = 1
+        self._num_coaches = NUM_COACHES
         self._train_crowd: List[int] = []
         self._platform_crowd: List[float] = []
         self._station_name = ""
@@ -230,6 +241,8 @@ class MetrocrowdmanagerEnvironment(Environment):
         if task not in TASK_CONFIG:
             task = "crowd_assessment"
         self._task_name = task
+        self._num_coaches = kwargs.get("num_coaches", NUM_COACHES)
+        nc = self._num_coaches
 
         if seed is not None:
             random.seed(seed)
@@ -245,20 +258,20 @@ class MetrocrowdmanagerEnvironment(Environment):
 
         # --- Initialise platform crowd ---
         if task == "crowd_assessment":
-            self._platform_crowd = [float(random.randint(20, 50)) for _ in range(NUM_COACHES)]
+            self._platform_crowd = [float(random.randint(20, 50)) for _ in range(nc)]
         elif task == "redirection":
             if random.random() < 0.15:
                 # Balanced scenario — low variance
                 base = random.randint(40, 60)
                 self._platform_crowd = [
                     float(max(0, min(100, base + random.randint(-8, 8))))
-                    for _ in range(NUM_COACHES)
+                    for _ in range(nc)
                 ]
             else:
-                self._platform_crowd = [float(random.randint(15, 85)) for _ in range(NUM_COACHES)]
+                self._platform_crowd = [float(random.randint(15, 85)) for _ in range(nc)]
         else:  # multi_train — start empty, add initial wave
-            self._platform_crowd = [0.0] * NUM_COACHES
-            for i in range(NUM_COACHES):
+            self._platform_crowd = [0.0] * nc
+            for i in range(nc):
                 base = float(random.randint(5, 25))
                 if i < 2:
                     base = min(100.0, base * random.uniform(1.1, 1.5))
@@ -266,11 +279,11 @@ class MetrocrowdmanagerEnvironment(Environment):
 
         # --- Generate first train ---
         if task == "crowd_assessment":
-            self._train_crowd = generate_train_crowd(pattern_override="random")
+            self._train_crowd = generate_train_crowd(num_coaches=nc, pattern_override="random")
         elif task == "multi_train":
-            self._train_crowd = generate_train_crowd(bias_hard=True)
+            self._train_crowd = generate_train_crowd(num_coaches=nc, bias_hard=True)
         else:
-            self._train_crowd = generate_train_crowd()
+            self._train_crowd = generate_train_crowd(num_coaches=nc)
 
         self._crowd_history = [
             {
@@ -281,7 +294,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         ]
 
         return MetrocrowdmanagerObservation(
-            num_coaches=NUM_COACHES,
+            num_coaches=nc,
             train_crowd=list(self._train_crowd),
             platform_crowd=self._rounded_platform(),
             prompt_text=self._build_prompt(),
@@ -305,16 +318,20 @@ class MetrocrowdmanagerEnvironment(Environment):
         self._state.step_count += 1
         response_text = action.response_text
         platform_int = self._rounded_platform()
+        nc = self._num_coaches
 
-        # --- Compute all 7 rewards ---
+        # --- Compute all 10 rewards ---
         rewards = {
-            "politeness": compute_politeness(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "math_accuracy": compute_math_accuracy(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "color_grading": compute_color_grading(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "language_consistency": compute_language_consistency(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "noop_detection": compute_noop_detection(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "clarity": compute_clarity(response_text, self._train_crowd, platform_int, NUM_COACHES),
-            "sequential_direction": compute_sequential_direction(response_text, self._train_crowd, platform_int, NUM_COACHES),
+            "politeness": compute_politeness(response_text, self._train_crowd, platform_int, nc),
+            "distribution_accuracy": compute_distribution_accuracy(response_text, self._train_crowd, platform_int, nc),
+            "conservation_accuracy": compute_conservation_accuracy(response_text, self._train_crowd, platform_int, nc),
+            "feasibility_accuracy": compute_feasibility_accuracy(response_text, self._train_crowd, platform_int, nc),
+            "color_grading": compute_color_grading(response_text, self._train_crowd, platform_int, nc),
+            "language_consistency": compute_language_consistency(response_text, self._train_crowd, platform_int, nc),
+            "noop_detection": compute_noop_detection(response_text, self._train_crowd, platform_int, nc),
+            "clarity": compute_clarity(response_text, self._train_crowd, platform_int, nc),
+            "sequential_direction": compute_sequential_direction(response_text, self._train_crowd, platform_int, nc),
+            "factual_accuracy": compute_factual_accuracy(response_text, self._train_crowd, platform_int, nc),
         }
 
         # --- Task-specific weighting ---
@@ -325,7 +342,18 @@ class MetrocrowdmanagerEnvironment(Environment):
                 + 0.25 * rewards["clarity"]
             )
         else:
-            total_reward = sum(rewards.values()) / 7.0
+            total_reward = (
+                0.30 * rewards["distribution_accuracy"]
+                + 0.10 * rewards["conservation_accuracy"]
+                + 0.10 * rewards["feasibility_accuracy"]
+                + 0.10 * rewards["color_grading"]
+                + 0.05 * rewards["politeness"]
+                + 0.10 * rewards["factual_accuracy"]
+                + 0.05 * rewards["noop_detection"]
+                + 0.08 * rewards["clarity"]
+                + 0.07 * rewards["sequential_direction"]
+                + 0.05 * rewards["language_consistency"]
+            )
 
         self._total_reward += total_reward
         self._step_rewards.append(total_reward)
@@ -348,7 +376,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         )
 
         return MetrocrowdmanagerObservation(
-            num_coaches=NUM_COACHES,
+            num_coaches=nc,
             train_crowd=list(self._train_crowd),
             platform_crowd=self._rounded_platform(),
             prompt_text=self._build_prompt() if not done else "",
@@ -390,36 +418,38 @@ class MetrocrowdmanagerEnvironment(Environment):
 
     def _evolve_crowd(self, response_text: str, step_reward: float) -> None:
         """Evolve the platform crowd state for multi_train task."""
+        nc = self._num_coaches
+
         # 1. Simulate redirection effect based on agent's recommendation
         proposed = self._parse_proposed_distribution(response_text)
-        if proposed is not None and len(proposed) == NUM_COACHES:
+        if proposed is not None and len(proposed) == nc:
             # Better responses → higher compliance (0.3 to 0.7)
             compliance = 0.3 + 0.4 * step_reward
-            for i in range(NUM_COACHES):
+            for i in range(nc):
                 self._platform_crowd[i] = (
                     (1 - compliance) * self._platform_crowd[i]
                     + compliance * proposed[i]
                 )
 
         # 2. Simulate train departure — passengers board
-        for i in range(NUM_COACHES):
+        for i in range(nc):
             boarding_rate = (100 - self._train_crowd[i]) / 100.0 * 0.5
             self._platform_crowd[i] = max(0.0, self._platform_crowd[i] * (1 - boarding_rate))
 
         # 3. Generate next train
-        self._train_crowd = generate_train_crowd(bias_hard=True)
+        self._train_crowd = generate_train_crowd(num_coaches=nc, bias_hard=True)
 
         # 4. Add new passengers arriving at the platform
         self._platform_crowd = _add_new_passengers(
-            self._platform_crowd, NUM_COACHES, bias_hard=True,
+            self._platform_crowd, nc, bias_hard=True,
         )
 
         # 5. With 15% chance, force a balanced state (no-op test)
         if random.random() < 0.15:
-            avg = sum(self._platform_crowd) / NUM_COACHES
+            avg = sum(self._platform_crowd) / nc
             self._platform_crowd = [
                 max(0.0, min(100.0, avg + random.uniform(-5, 5)))
-                for _ in range(NUM_COACHES)
+                for _ in range(nc)
             ]
 
     @staticmethod
@@ -437,10 +467,12 @@ class MetrocrowdmanagerEnvironment(Environment):
         """Build the prompt text for the current step and task."""
         tc = self._train_crowd
         pc = self._rounded_platform()
-        labels = COACH_LABELS
+        nc = self._num_coaches
+        labels = _coach_labels(nc)
+        last = labels[-1]
 
-        coach_str = ", ".join(f"Coach {labels[i]}: {tc[i]}%" for i in range(NUM_COACHES))
-        zone_str = ", ".join(f"Zone {labels[i]}: {pc[i]}%" for i in range(NUM_COACHES))
+        coach_str = ", ".join(f"Coach {labels[i]}: {tc[i]}%" for i in range(nc))
+        zone_str = ", ".join(f"Zone {labels[i]}: {pc[i]}%" for i in range(nc))
 
         if self._task_name == "multi_train":
             header = (
@@ -463,9 +495,9 @@ class MetrocrowdmanagerEnvironment(Environment):
                 "",
                 "Respond in the following structured format:",
                 "",
-                "Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone F>]",
+                f"Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone {last}>]",
                 "",
-                "Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach F>]",
+                f"Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach {last}>]",
                 "",
                 "Color code reference: #008000 (Green, <=40%), #FFFF00 (Yellow, 40-60%), #FF8C00 (Orange, 60-80%), #FF0000 (Red, >80%)",
             ]
@@ -475,11 +507,11 @@ class MetrocrowdmanagerEnvironment(Environment):
                 "",
                 'Announcement: "<your crowd redirection announcement>"',
                 "",
-                "Recommended Platform Distribution: [<target % for Zone A>, <target % for Zone B>, ..., <target % for Zone F>]",
+                f"Recommended Platform Distribution: [<target % for Zone A>, <target % for Zone B>, ..., <target % for Zone {last}>]",
                 "",
-                "Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone F>]",
+                f"Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone {last}>]",
                 "",
-                "Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach F>]",
+                f"Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach {last}>]",
                 "",
                 "Color code reference: #008000 (Green, <=40%), #FFFF00 (Yellow, 40-60%), #FF8C00 (Orange, 60-80%), #FF0000 (Red, >80%)",
             ]

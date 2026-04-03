@@ -7,7 +7,7 @@
 """
 Rule-based reward functions for the MetroCrowdManager environment.
 
-All 7 reward functions are deterministic heuristics (not LLM-as-judge).
+All 9 reward functions are deterministic heuristics (not LLM-as-judge).
 Each returns a float in [0.0, 1.0].
 
 Signature: (response_text, train_crowd, platform_crowd, num_coaches) -> float
@@ -30,6 +30,12 @@ def _std(values: List[float]) -> float:
     mean = sum(values) / n
     variance = sum((x - mean) ** 2 for x in values) / n
     return math.sqrt(variance)
+
+
+def _extract_announcement(response_text: str) -> str:
+    """Extract the announcement text from the structured response."""
+    match = re.search(r'Announcement:\s*"([^"]*)"', response_text)
+    return match.group(1) if match else response_text
 
 
 def _parse_distribution(response_text: str) -> List[float] | None:
@@ -90,13 +96,21 @@ _DIRECTIVE_PHRASES = [
     "please go to",
     "relocate to",
     "head to",
+    "moving to",
+    "avoid",
+    "spread out",
+    "distribute yourselves",
+    "consider moving",
+    "head towards",
 ]
 
 
 def _is_balanced(train_crowd: List[int], platform_crowd: List[int], num_coaches: int) -> bool:
     """Check whether the current crowd state is roughly balanced."""
-    if _std([float(p) for p in platform_crowd]) < 10:
-        return True
+    if _std([float(p) for p in platform_crowd]) >= 10:
+        return False
+    if _std([float(t) for t in train_crowd]) >= 15:
+        return False
     effective = [(train_crowd[i] + platform_crowd[i]) / 2.0 for i in range(num_coaches)]
     return _std(effective) < 8
 
@@ -120,6 +134,10 @@ _POLITE_MARKERS = [
     "would you mind",
     "we encourage",
     "your cooperation",
+    "we suggest",
+    "attention passengers",
+    "for a comfortable",
+    "for your safety",
 ]
 
 _RUDE_MARKERS = [
@@ -159,10 +177,50 @@ def compute_politeness(
 
 
 # ---------------------------------------------------------------------------
-# Reward 2 — Mathematical Accuracy
+# Shared helper for math-based rewards
 # ---------------------------------------------------------------------------
 
-def compute_math_accuracy(
+def _compute_ideal(train_crowd: List[int], platform_crowd: List[int], num_coaches: int) -> List[int]:
+    """Compute capacity-weighted ideal distribution with iterative cap redistribution."""
+    train_capacity = [100 - train_crowd[i] for i in range(num_coaches)]
+    total_capacity = sum(train_capacity)
+    if total_capacity == 0:
+        return [int(sum(platform_crowd) / num_coaches)] * num_coaches
+
+    total_platform = sum(platform_crowd)
+    if total_platform == 0:
+        return [0] * num_coaches
+
+    weights = [c / total_capacity for c in train_capacity]
+    ideal = [0.0] * num_coaches
+    locked = [False] * num_coaches
+    remaining = float(total_platform)
+
+    for _ in range(num_coaches):
+        unlocked_weight = sum(weights[i] for i in range(num_coaches) if not locked[i])
+        if unlocked_weight <= 0:
+            break
+        for i in range(num_coaches):
+            if not locked[i]:
+                ideal[i] = remaining * (weights[i] / unlocked_weight)
+        changed = False
+        for i in range(num_coaches):
+            if not locked[i] and ideal[i] > 100.0:
+                ideal[i] = 100.0
+                locked[i] = True
+                remaining -= 100.0
+                changed = True
+        if not changed:
+            break
+
+    return [int(max(0.0, min(100.0, v))) for v in ideal]
+
+
+# ---------------------------------------------------------------------------
+# Reward 2a — Distribution Accuracy (MAE against ideal)
+# ---------------------------------------------------------------------------
+
+def compute_distribution_accuracy(
     response_text: str,
     train_crowd: List[int],
     platform_crowd: List[int],
@@ -171,7 +229,6 @@ def compute_math_accuracy(
     proposed = _parse_distribution(response_text)
 
     if proposed is None:
-        # No distribution provided — neutral score for balanced scenarios
         if _is_balanced(train_crowd, platform_crowd, num_coaches):
             return 0.5
         return 0.0
@@ -179,32 +236,72 @@ def compute_math_accuracy(
     if len(proposed) != num_coaches:
         return 0.0
 
-    # Compute ideal distribution weighted by available train capacity
-    capacity = [100 - train_crowd[i] for i in range(num_coaches)]
-    total_capacity = sum(capacity)
-    if total_capacity == 0:
-        total_capacity = 1  # avoid division by zero (fully packed train)
+    ideal = _compute_ideal(train_crowd, platform_crowd, num_coaches)
 
-    avg_platform = sum(platform_crowd) / num_coaches
-    avg_capacity = total_capacity / num_coaches
-    if avg_capacity == 0:
-        avg_capacity = 1
-
-    ideal = [
-        avg_platform * (capacity[i] / avg_capacity)
-        for i in range(num_coaches)
-    ]
-    ideal = [max(0.0, min(100.0, p)) for p in ideal]
-
-    # Mean Absolute Error in percentage points
     mae = sum(abs(proposed[i] - ideal[i]) for i in range(num_coaches)) / num_coaches
-    score = max(0.0, 1.0 - mae / 50.0)
-
-    # Feasibility penalty for impossible percentages
-    if any(p < 0 or p > 100 for p in proposed):
-        score *= 0.5
-
+    score = max(0.0, 1.0 - mae / 30.0)
+    # print("distribution_accuracy: ", score)
+    # print("train_crowd: ", train_crowd)
+    # print("platform_crowd: ", platform_crowd)
+    # print("proposed: ", proposed)
+    # print("ideal: ", ideal)
+    # print("mae: ", mae)
     return score
+
+
+# ---------------------------------------------------------------------------
+# Reward 2b — Conservation Accuracy (total crowd preserved)
+# ---------------------------------------------------------------------------
+
+def compute_conservation_accuracy(
+    response_text: str,
+    train_crowd: List[int],
+    platform_crowd: List[int],
+    num_coaches: int,
+) -> float:
+    proposed = _parse_distribution(response_text)
+
+    if proposed is None:
+        if _is_balanced(train_crowd, platform_crowd, num_coaches):
+            return 0.5
+        return 0.0
+
+    if len(proposed) != num_coaches:
+        return 0.0
+
+    total_proposed = sum(proposed)
+    total_platform = sum(platform_crowd)
+
+    if total_platform == 0:
+        return 1.0 if total_proposed == 0 else 0.0
+
+    return min(total_proposed, total_platform) / max(total_proposed, total_platform)
+
+
+# ---------------------------------------------------------------------------
+# Reward 2c — Feasibility Accuracy (values in valid range)
+# ---------------------------------------------------------------------------
+
+def compute_feasibility_accuracy(
+    response_text: str,
+    train_crowd: List[int],
+    platform_crowd: List[int],
+    num_coaches: int,
+) -> float:
+    proposed = _parse_distribution(response_text)
+
+    if proposed is None:
+        if _is_balanced(train_crowd, platform_crowd, num_coaches):
+            return 0.5
+        return 0.0
+
+    if len(proposed) != num_coaches:
+        return 0.0
+
+    if any(p < 0 or p > 100 for p in proposed):
+        return 0.5
+
+    return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -349,11 +446,12 @@ def compute_clarity(
     platform_crowd: List[int],
     num_coaches: int,
 ) -> float:
-    if not response_text.strip():
+    announcement = _extract_announcement(response_text)
+    if not announcement.strip():
         return 0.0
 
     # Component A: Sentence length (30%)
-    sentences = [s.strip() for s in re.split(r"[.!?]+", response_text) if s.strip()]
+    sentences = [s.strip() for s in re.split(r"[.!?]+", announcement) if s.strip()]
     if not sentences:
         return 0.0
 
@@ -366,19 +464,19 @@ def compute_clarity(
         length_score = max(0.0, 1.0 - (avg_words - 25) * 0.05)
 
     # Component B: Jargon penalty (30%)
-    text_lower = response_text.lower()
+    text_lower = announcement.lower()
     jargon_count = sum(1 for t in _JARGON_TERMS if t in text_lower)
     jargon_score = max(0.0, 1.0 - jargon_count * 0.25)
 
     # Component C: Structure bonus (30%)
-    has_numbered = bool(re.search(r"\d+[.)]\s", response_text))
-    has_bullets = bool(re.search(r"[-*\u2022]\s", response_text))
-    has_headers = bool(re.search(r"(?:Coach|Zone)\s*[A-F]\s*:", response_text))
+    has_numbered = bool(re.search(r"\d+[.)]\s", announcement))
+    has_bullets = bool(re.search(r"[-*\u2022]\s", announcement))
+    has_headers = bool(re.search(r"(?:Coaches?|Zones?)\s*[A-J]\s*:", announcement))
     structure_features = sum([has_numbered, has_bullets, has_headers])
     structure_score = min(1.0, structure_features * 0.5)
 
     # Component D: Minimum length (10%)
-    length_ok = 1.0 if len(response_text) >= 50 else len(response_text) / 50.0
+    length_ok = 1.0 if len(announcement) >= 50 else len(announcement) / 50.0
 
     return 0.3 * length_score + 0.3 * jargon_score + 0.3 * structure_score + 0.1 * length_ok
 
@@ -416,8 +514,9 @@ def compute_sequential_direction(
     platform_crowd: List[int],
     num_coaches: int,
 ) -> float:
+    announcement = _extract_announcement(response_text)
     balanced = _is_balanced(train_crowd, platform_crowd, num_coaches)
-    text_lower = response_text.lower()
+    text_lower = announcement.lower()
 
     has_noop = any(p in text_lower for p in _NOOP_PHRASES)
     has_directive = any(p in text_lower for p in _DIRECTIVE_PHRASES)
@@ -428,7 +527,7 @@ def compute_sequential_direction(
 
     # Find zone/coach references in text order
     zone_positions = []
-    for match in re.finditer(r"(?:Zone|Coach)\s*([A-F])", response_text, re.IGNORECASE):
+    for match in re.finditer(r"(?:Zones?|Coaches?)\s*([A-J])", announcement, re.IGNORECASE):
         zone_positions.append(match.group(1).upper())
 
     if len(zone_positions) < 2:
@@ -458,3 +557,52 @@ def compute_sequential_direction(
     simultaneous_penalty = min(0.5, sim_count * 0.25)
 
     return max(0.0, min(1.0, sequential_score + transition_bonus - simultaneous_penalty))
+
+
+# ---------------------------------------------------------------------------
+# Reward 8 — Factual Accuracy of Announcements
+# ---------------------------------------------------------------------------
+
+_CROWDED_PHRASES = [
+    "crowded", "full", "quite full", "very full", "busy",
+    "packed", "most crowded", "avoid",
+]
+
+_SPACIOUS_PHRASES = [
+    "space", "room", "least crowded", "plenty", "less crowded",
+    "spacious", "not crowded", "more space",
+]
+
+
+def compute_factual_accuracy(
+    response_text: str,
+    train_crowd: List[int],
+    platform_crowd: List[int],
+    num_coaches: int,
+) -> float:
+    """Check whether crowd descriptions in the announcement match actual data."""
+    announcement = _extract_announcement(response_text)
+    text_lower = announcement.lower()
+
+    labels = [chr(ord("a") + i) for i in range(num_coaches)]
+    claims = 0
+    correct = 0
+
+    for i, label in enumerate(labels):
+        for match in re.finditer(rf"coach\s*{label}\b", text_lower):
+            context = text_lower[max(0, match.start() - 40):match.end() + 60]
+            is_crowded_claim = any(p in context for p in _CROWDED_PHRASES)
+            is_spacious_claim = any(p in context for p in _SPACIOUS_PHRASES)
+
+            if is_crowded_claim:
+                claims += 1
+                if train_crowd[i] >= 60:
+                    correct += 1
+            elif is_spacious_claim:
+                claims += 1
+                if train_crowd[i] <= 50:
+                    correct += 1
+
+    if claims == 0:
+        return 0.5
+    return correct / claims

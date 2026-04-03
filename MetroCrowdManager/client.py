@@ -27,12 +27,12 @@ class MetrocrowdmanagerEnv(
     Example:
         >>> async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as client:
         ...     result = await client.reset(task="crowd_assessment")
-        ...     print(result.observation.prompt_text)
+        ...    
         ...
         ...     result = await client.step(
         ...         MetrocrowdmanagerAction(response_text="Platform Zone Color Codes: [...]")
         ...     )
-        ...     print(result.reward)
+        ...    
     """
 
     def _step_payload(self, action: MetrocrowdmanagerAction) -> Dict[str, Any]:
@@ -45,7 +45,7 @@ class MetrocrowdmanagerEnv(
         """Parse server response into StepResult."""
         obs_data = payload.get("observation", {})
         observation = MetrocrowdmanagerObservation(
-            num_coaches=obs_data.get("num_coaches", 6),
+            num_coaches=obs_data.get("num_coaches", 10),
             train_crowd=obs_data.get("train_crowd", []),
             platform_crowd=obs_data.get("platform_crowd", []),
             prompt_text=obs_data.get("prompt_text", ""),

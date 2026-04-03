@@ -1,0 +1,2 @@
+[console_scripts]
+server = MetroCrowdManager.server.app:main

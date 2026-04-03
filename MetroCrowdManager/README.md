@@ -33,7 +33,6 @@ from MetroCrowdManager import MetrocrowdmanagerAction, MetrocrowdmanagerEnv
 
 async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as env:
     result = await env.reset(task="redirection")
-    print(result.observation.prompt_text)
 
     result = await env.step(MetrocrowdmanagerAction(
         response_text='Announcement: "Dear passengers, please ..."\n'
@@ -41,7 +40,7 @@ async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as env:
                        'Platform Zone Color Codes: [#FFFF00, #FFFF00, #FF8C00, #FFFF00, #008000, #FFFF00]\n'
                        'Train Coach Color Codes: [#FF8C00, #FF0000, #FF0000, #FF8C00, #FFFF00, #FF8C00]'
     ))
-    print(f"Reward: {result.reward}")
+
 ```
 
 ## Action Space

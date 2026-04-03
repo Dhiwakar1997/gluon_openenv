@@ -52,6 +52,7 @@ SYSTEM_PROMPT_EASY = textwrap.dedent("""\
     You receive train coach occupancy and platform zone crowd percentages.
     Map the crowd percentages to the correct hex color codes.
     Follow the exact structured output format requested in each prompt.
+    In the announcement you must not include the percentage of the crowd in the announcement, instead you should discribe the crowd in a way that is easy to understand for a human.
 """)
 
 SYSTEM_PROMPT_FULL = textwrap.dedent("""\
@@ -60,9 +61,39 @@ SYSTEM_PROMPT_FULL = textwrap.dedent("""\
     You must produce polite, clear, coach-by-coach redirection announcements
     with recommended platform distributions and color-coded crowd indicators.
     Follow the exact structured output format requested in each prompt.
+    In the announcement you must not include the percentage of the crowd in the announcement, instead you should describe the crowd in a way that is easy to understand for a human.
+
+    ## Distribution Calculation (CRITICAL — follow exactly)
+
+    1. For each coach, compute available capacity: capacity_i = 100 - coach_occupancy_i
+    2. Sum all capacities: total_capacity = sum of all capacity_i
+    3. Sum all current platform crowd values: total_platform = sum of all platform_crowd_i
+    4. For each zone, compute: recommended_i = total_platform * (capacity_i / total_capacity)
+    5. VERIFY: your recommended values MUST sum to total_platform (conserve passengers).
+
+    ### Worked Example (4 coaches)
+    Coach occupancies: [80, 20, 60, 40]
+    Platform crowd: [30, 50, 20, 40]
+    Step 1 — Capacities: [20, 80, 40, 60] (each is 100 minus occupancy)
+    Step 2 — Total capacity: 20+80+40+60 = 200
+    Step 3 — Total platform: 30+50+20+40 = 140
+    Step 4 — Distribution: [140*(20/200), 140*(80/200), 140*(40/200), 140*(60/200)]
+             = [14.0, 56.0, 28.0, 42.0]
+    Step 5 — Check: 14+56+28+42 = 140 ✓ (matches total platform)
+
+    ## Announcement Guidelines
+    - Reference coaches in alphabetical order: Coach A first, then Coach B, then Coach C, etc.
+    - Structure with numbered steps or coach-by-coach headers (e.g., "Coach A: ...").
+    - Keep sentences short (under 15 words each) and avoid technical jargon.
+    - Be polite: use "please", "kindly", "we recommend", "for your comfort".
+    - Describe crowded coaches as "quite busy" or "full" and empty ones as "spacious" or "plenty of room".
+    - Start the announcement with a polite greeting and then describe the crowd in a way that is easy to understand for a human and mentions the platform zones in the announcement.
+    - Avoid specifying the exact number of passengers in the announcement, instead describe the crowd in a way that is easy to understand for a human.
+
 """)
 
-TEMPERATURE = 0.7
+TEMPERATURE_EASY = 0.7
+TEMPERATURE_HARD = 0.2
 MAX_TOKENS = 500
 SUCCESS_THRESHOLD = 0.3
 
@@ -78,24 +109,31 @@ def run_task(client: OpenAI, env: MetrocrowdmanagerEnvironment, task_name: str) 
     rewards: list[float] = []
 
     system_prompt = SYSTEM_PROMPT_EASY if task_name == "crowd_assessment" else SYSTEM_PROMPT_FULL
+    temperature = TEMPERATURE_EASY if task_name == "crowd_assessment" else TEMPERATURE_HARD
+
+    # Accumulate conversation history for multi-step tasks
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
     print(f"[START] task={task_name} env=MetroCrowdManager model={MODEL_NAME}")
 
     for step_num in range(1, max_steps + 1):
+        # Add current observation as user message
+        messages.append({"role": "user", "content": obs.prompt_text})
+
         try:
             response = client.chat.completions.create(
                 model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": obs.prompt_text},
-                ],
-                temperature=TEMPERATURE,
+                messages=messages,
+                temperature=temperature,
                 max_tokens=MAX_TOKENS,
             )
             action_text = response.choices[0].message.content or ""
+           # print("\n"*5,"action_text: ", action_text,"\n"*5)
         except Exception as e:
             action_text = ""
             error_msg = str(e)
+            # Remove the failed user message so history stays clean
+            messages.pop()
             print(
                 f"[STEP] step={step_num} action= reward=0.00 "
                 f"done={_bool_str(step_num >= max_steps)} error={error_msg}"
@@ -104,6 +142,9 @@ def run_task(client: OpenAI, env: MetrocrowdmanagerEnvironment, task_name: str) 
             if step_num >= max_steps:
                 break
             continue
+
+        # Keep assistant response in history for multi-step context
+        messages.append({"role": "assistant", "content": action_text})
 
         action = MetrocrowdmanagerAction(response_text=action_text)
         obs = env.step(action)
