@@ -1,0 +1,27 @@
+spec_version: 1
+name: MetroCrowdManager
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+description: >
+  Metro station crowd management RL environment. Agent receives train coach
+  occupancy and platform zone crowd percentages, must produce polite
+  redirection announcements with color-coded crowd indicators.
+version: "1.0.0"
+author: "Giridaran D, Dhiwakar Nagarajan"
+tags:
+  - openenv
+  - crowd-management
+  - metro
+  - reinforcement-learning
+tasks:
+  - name: crowd_assessment
+    description: "Map crowd percentages to correct color codes for platform zones and train coaches (easy)"
+    difficulty: easy
+  - name: redirection
+    description: "Produce full redirection announcement with redistribution, color codes, and polite directions (medium)"
+    difficulty: medium
+  - name: multi_train
+    description: "Manage crowd across 8 evolving train arrivals with crisis surges and temporal adaptation (hard)"
+    difficulty: hard
