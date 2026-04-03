@@ -82,6 +82,7 @@ SYSTEM_PROMPT_FULL = textwrap.dedent("""\
     Step 5 — Check: 14+56+28+42 = 140 ✓ (matches total platform)
 
     ## Announcement Guidelines
+    - Begin your announcement by addressing passengers on the specific platform number provided (e.g., "Passengers on Platform 3, may we have your attention please").
     - Reference coaches in alphabetical order: Coach A first, then Coach B, then Coach C, etc.
     - Structure with numbered steps or coach-by-coach headers (e.g., "Coach A: ...").
     - Keep sentences short (under 15 words each) and avoid technical jargon.

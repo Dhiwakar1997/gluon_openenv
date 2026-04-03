@@ -38,6 +38,7 @@ try:
         compute_feasibility_accuracy,
         compute_language_consistency,
         compute_noop_detection,
+        compute_platform_mention,
         compute_politeness,
         compute_sequential_direction,
     )
@@ -51,6 +52,7 @@ except ImportError:
         compute_feasibility_accuracy,
         compute_language_consistency,
         compute_noop_detection,
+        compute_platform_mention,
         compute_politeness,
         compute_sequential_direction,
     )
@@ -217,6 +219,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         self._train_crowd: List[int] = []
         self._platform_crowd: List[float] = []
         self._station_name = ""
+        self._platform_number: int = 1
         self._total_reward = 0.0
         self._step_rewards: List[float] = []
         self._crowd_history: List[dict] = []
@@ -253,6 +256,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         )
         self._max_steps = TASK_CONFIG[task]["max_steps"]
         self._station_name = random.choice(STATION_NAMES)
+        self._platform_number = random.randint(1, 8)
         self._total_reward = 0.0
         self._step_rewards = []
 
@@ -294,6 +298,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         ]
 
         return MetrocrowdmanagerObservation(
+            platform_number=self._platform_number,
             num_coaches=nc,
             train_crowd=list(self._train_crowd),
             platform_crowd=self._rounded_platform(),
@@ -320,7 +325,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         platform_int = self._rounded_platform()
         nc = self._num_coaches
 
-        # --- Compute all 10 rewards ---
+        # --- Compute all 11 rewards ---
         rewards = {
             "politeness": compute_politeness(response_text, self._train_crowd, platform_int, nc),
             "distribution_accuracy": compute_distribution_accuracy(response_text, self._train_crowd, platform_int, nc),
@@ -332,6 +337,7 @@ class MetrocrowdmanagerEnvironment(Environment):
             "clarity": compute_clarity(response_text, self._train_crowd, platform_int, nc),
             "sequential_direction": compute_sequential_direction(response_text, self._train_crowd, platform_int, nc),
             "factual_accuracy": compute_factual_accuracy(response_text, self._train_crowd, platform_int, nc),
+            "platform_mention": compute_platform_mention(response_text, self._platform_number),
         }
 
         # --- Task-specific weighting ---
@@ -350,9 +356,10 @@ class MetrocrowdmanagerEnvironment(Environment):
                 + 0.05 * rewards["politeness"]
                 + 0.10 * rewards["factual_accuracy"]
                 + 0.05 * rewards["noop_detection"]
-                + 0.08 * rewards["clarity"]
-                + 0.07 * rewards["sequential_direction"]
+                + 0.05 * rewards["clarity"]
+                + 0.05 * rewards["sequential_direction"]
                 + 0.05 * rewards["language_consistency"]
+                + 0.05 * rewards["platform_mention"]
             )
 
         self._total_reward += total_reward
@@ -376,6 +383,7 @@ class MetrocrowdmanagerEnvironment(Environment):
         )
 
         return MetrocrowdmanagerObservation(
+            platform_number=self._platform_number,
             num_coaches=nc,
             train_crowd=list(self._train_crowd),
             platform_crowd=self._rounded_platform(),
@@ -405,6 +413,7 @@ class MetrocrowdmanagerEnvironment(Environment):
             train_crowd=list(self._train_crowd),
             platform_crowd=self._rounded_platform(),
             station_name=self._station_name,
+            platform_number=self._platform_number,
             total_reward=self._total_reward,
             step_rewards=list(self._step_rewards),
             crowd_history=self._crowd_history,
@@ -476,11 +485,11 @@ class MetrocrowdmanagerEnvironment(Environment):
 
         if self._task_name == "multi_train":
             header = (
-                f"Upcoming train arriving at {self._station_name} station. "
+                f"Upcoming train arriving at {self._station_name} station, Platform {self._platform_number}. "
                 f"[Step {self._state.step_count + 1}/{self._max_steps}]"
             )
         else:
-            header = f"Train arriving at {self._station_name} station."
+            header = f"Train arriving at {self._station_name} station, Platform {self._platform_number}."
 
         lines = [
             header,
@@ -503,6 +512,8 @@ class MetrocrowdmanagerEnvironment(Environment):
             ]
         else:
             lines += [
+                "Your announcement must begin by addressing passengers on the correct platform number.",
+                "",
                 "Respond in the following structured format:",
                 "",
                 'Announcement: "<your crowd redirection announcement>"',

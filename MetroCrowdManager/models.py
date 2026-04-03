@@ -40,6 +40,7 @@ class MetrocrowdmanagerObservation(Observation):
     train coach occupancy and platform zone crowd percentages.
     """
 
+    platform_number: int = Field(default=1, description="Platform number at the station (1-8)")
     num_coaches: int = Field(default=10, description="Number of train coaches / platform zones")
     train_crowd: List[int] = Field(
         default_factory=list,

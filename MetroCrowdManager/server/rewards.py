@@ -606,3 +606,27 @@ def compute_factual_accuracy(
     if claims == 0:
         return 0.5
     return correct / claims
+
+
+# ---------------------------------------------------------------------------
+# Reward 9 — Platform Number Mention
+# ---------------------------------------------------------------------------
+
+def compute_platform_mention(
+    response_text: str,
+    platform_number: int,
+) -> float:
+    """Check whether the announcement correctly mentions the platform number."""
+    announcement = _extract_announcement(response_text)
+    if not announcement.strip():
+        return 0.0
+
+    matches = re.findall(r"platform\s*(?:number\s*)?(\d+)", announcement, re.IGNORECASE)
+    if not matches:
+        return 0.0
+
+    for m in matches:
+        if int(m) == platform_number:
+            return 1.0
+
+    return 0.0
