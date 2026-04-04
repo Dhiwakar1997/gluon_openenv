@@ -6,7 +6,11 @@
 
 """MetroCrowdManager environment server components."""
 
-from .MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
-from . import rewards
+try:
+    from .MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
+    from . import rewards
+except ImportError:
+    from MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
+    import rewards
 
 __all__ = ["MetrocrowdmanagerEnvironment", "rewards"]

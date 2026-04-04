@@ -6,8 +6,12 @@
 
 """MetroCrowdManager Environment."""
 
-from .client import MetrocrowdmanagerEnv
-from .models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+try:
+    from .client import MetrocrowdmanagerEnv
+    from .models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+except ImportError:
+    from client import MetrocrowdmanagerEnv
+    from models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
 
 __all__ = [
     "MetrocrowdmanagerAction",
