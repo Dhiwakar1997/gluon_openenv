@@ -6,6 +6,8 @@ MANDATORY
     API_BASE_URL   The API endpoint for the LLM.
     MODEL_NAME     The model identifier to use for inference.
     HF_TOKEN       Your Hugging Face / API key.
+    LOCAL_IMAGE_NAME The name of the local image to use for the environment if you are using from_docker_image()
+                     method
 
 - Defaults:
     API_BASE_URL = "https://router.huggingface.co/v1"
@@ -16,36 +18,53 @@ MANDATORY
 - Participants must use OpenAI Client for all LLM calls using above variables.
 
 STDOUT FORMAT
-- The script emits exactly three line types to stdout:
+- The script must emit exactly three line types to stdout, in this order:
+
     [START] task=<task_name> env=<benchmark> model=<model_name>
     [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
-    [END]   success=<true|false> steps=<n> rewards=<r1,r2,...,rn>
+    [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+
+  Rules:
+    - One [START] line at episode begin.
+    - One [STEP] line per step, immediately after env.step() returns.
+    - One [END] line after env.close(), always emitted (even on exception).
+    - reward and rewards are formatted to 2 decimal places.
+    - done and success are lowercase booleans: true or false.
+    - error is the raw last_action_error string, or null if none.
+    - All fields on a single line with no newlines within a line.
+    - Each tasks should return score in [0, 1]
+
+  Example:
+    [START] task=crowd_assessment env=MetroCrowdManager model=Qwen/Qwen2.5-72B-Instruct
+    [STEP] step=1 action=Platform Zone Color... reward=0.75 done=true error=null
+    [END] success=true steps=1 score=0.750 rewards=0.75
 """
 
+import asyncio
 import os
-import sys
 import textwrap
+from typing import List, Optional
 
 from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Import environment directly (no server needed for inference)
-# ---------------------------------------------------------------------------
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from models import MetrocrowdmanagerAction
-from server.MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
+from MetroCrowdManager.client import MetrocrowdmanagerEnv
+from MetroCrowdManager.models import MetrocrowdmanagerAction
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
+IMAGE_NAME = os.getenv("IMAGE_NAME")  # If you are using docker image
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+BENCHMARK = "MetroCrowdManager"
 
 TASKS = ["crowd_assessment", "redirection", "multi_train"]
 MAX_STEPS = {"crowd_assessment": 1, "redirection": 1, "multi_train": 8}
+TEMPERATURE = {"crowd_assessment": 0.7, "redirection": 0.2, "multi_train": 0.2}
+MAX_TOKENS = 500
+SUCCESS_SCORE_THRESHOLD = 0.3  # normalized score in [0, 1]
 
 SYSTEM_PROMPT_EASY = textwrap.dedent("""\
     You are a metro station crowd management assistant.
@@ -93,94 +112,144 @@ SYSTEM_PROMPT_FULL = textwrap.dedent("""\
 
 """)
 
-TEMPERATURE_EASY = 0.7
-TEMPERATURE_HARD = 0.2
-MAX_TOKENS = 500
-SUCCESS_THRESHOLD = 0.3
+
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def _bool_str(val: bool) -> str:
-    return "true" if val else "false"
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        flush=True,
+    )
 
 
-def run_task(client: OpenAI, env: MetrocrowdmanagerEnvironment, task_name: str) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# LLM interaction
+# ---------------------------------------------------------------------------
+
+def get_model_response(
+    client: OpenAI,
+    messages: List[dict],
+    temperature: float,
+) -> str:
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=MAX_TOKENS,
+            stream=False,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        return text if text else ""
+    except Exception as exc:
+        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Task runner
+# ---------------------------------------------------------------------------
+
+async def run_task(client: OpenAI, env: MetrocrowdmanagerEnv, task_name: str) -> None:
     """Run a single task and emit stdout logs."""
-    obs = env.reset(task=task_name)
     max_steps = MAX_STEPS[task_name]
-    rewards: list[float] = []
-
+    temperature = TEMPERATURE[task_name]
     system_prompt = SYSTEM_PROMPT_EASY if task_name == "crowd_assessment" else SYSTEM_PROMPT_FULL
-    temperature = TEMPERATURE_EASY if task_name == "crowd_assessment" else TEMPERATURE_HARD
+
+    rewards: List[float] = []
+    steps_taken = 0
+    score = 0.0
+    success = False
 
     # Accumulate conversation history for multi-step tasks
-    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    messages: List[dict] = [{"role": "system", "content": system_prompt}]
 
-    print(f"[START] task={task_name} env=MetroCrowdManager model={MODEL_NAME}")
+    log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
-    for step_num in range(1, max_steps + 1):
-        # Add current observation as user message
-        messages.append({"role": "user", "content": obs.prompt_text})
+    try:
+        result = await env.reset(task=task_name)
+        obs = result.observation
+        prompt_text = obs.prompt_text
 
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=MAX_TOKENS,
-            )
-            action_text = response.choices[0].message.content or ""
-           # print("\n"*5,"action_text: ", action_text,"\n"*5)
-        except Exception as e:
-            action_text = ""
-            error_msg = str(e)
-            # Remove the failed user message so history stays clean
-            messages.pop()
-            print(
-                f"[STEP] step={step_num} action= reward=0.00 "
-                f"done={_bool_str(step_num >= max_steps)} error={error_msg}"
-            )
-            rewards.append(0.0)
-            if step_num >= max_steps:
+        for step in range(1, max_steps + 1):
+            if result.done:
                 break
-            continue
 
-        # Keep assistant response in history for multi-step context
-        messages.append({"role": "assistant", "content": action_text})
+            # Add current observation as user message
+            messages.append({"role": "user", "content": prompt_text})
 
-        action = MetrocrowdmanagerAction(response_text=action_text)
-        obs = env.step(action)
+            action_text = get_model_response(client, messages, temperature)
 
-        reward = obs.reward if obs.reward is not None else 0.0
-        done = obs.done
-        error = obs.metadata.get("last_action_error", None)
-        error_str = str(error) if error else "null"
+            if not action_text:
+                # Remove the failed user message so history stays clean
+                messages.pop()
+                log_step(step=step, action="", reward=0.0, done=step >= max_steps, error="empty model response")
+                rewards.append(0.0)
+                steps_taken = step
+                if step >= max_steps:
+                    break
+                continue
 
-        # Truncate action text for log readability
-        action_log = action_text.replace("\n", " ")[:80]
+            # Keep assistant response in history for multi-step context
+            messages.append({"role": "assistant", "content": action_text})
 
-        rewards.append(float(reward))
-        print(
-            f"[STEP] step={step_num} action={action_log} "
-            f"reward={reward:.2f} done={_bool_str(done)} error={error_str}"
-        )
+            action = MetrocrowdmanagerAction(response_text=action_text)
+            result = await env.step(action)
+            obs = result.observation
 
-        if done:
-            break
+            reward = result.reward or 0.0
+            done = result.done
+            error = None
 
-    avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
-    success = avg_reward >= SUCCESS_THRESHOLD
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={_bool_str(success)} steps={len(rewards)} rewards={rewards_str}")
+            rewards.append(reward)
+            steps_taken = step
+
+            # Truncate action text for log readability
+            action_log = action_text.replace("\n", " ")[:80]
+            log_step(step=step, action=action_log, reward=reward, done=done, error=error)
+
+            # Update prompt for next step
+            prompt_text = obs.prompt_text
+
+            if done:
+                break
+
+        score = sum(rewards) / len(rewards) if rewards else 0.0
+        score = min(max(score, 0.0), 1.0)  # clamp to [0, 1]
+        success = score >= SUCCESS_SCORE_THRESHOLD
+
+    finally:
+        try:
+            await env.close()
+        except Exception as e:
+            print(f"[DEBUG] env.close() error (container cleanup): {e}", flush=True)
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
-def main() -> None:
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
-    client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
-    env = MetrocrowdmanagerEnvironment()
+async def main() -> None:
+    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     for task in TASKS:
-        run_task(client, env, task)
+        env = await MetrocrowdmanagerEnv.from_docker_image(IMAGE_NAME)
+        await run_task(client, env, task)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
