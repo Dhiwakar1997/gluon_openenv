@@ -12,8 +12,10 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
-
+try:
+    from .models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+except ImportError:
+    from models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
 
 class MetrocrowdmanagerEnv(
     EnvClient[MetrocrowdmanagerAction, MetrocrowdmanagerObservation, State]

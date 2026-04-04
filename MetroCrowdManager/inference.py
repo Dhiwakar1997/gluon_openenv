@@ -47,8 +47,8 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-from MetroCrowdManager.client import MetrocrowdmanagerEnv
-from MetroCrowdManager.models import MetrocrowdmanagerAction
+from client import MetrocrowdmanagerEnv
+from models import MetrocrowdmanagerAction
 
 # ---------------------------------------------------------------------------
 # Configuration
