@@ -10,6 +10,9 @@ description: >
   redirection announcements with color-coded crowd indicators.
 version: "1.0.0"
 author: "Giridaran D, Dhiwakar Nagarajan"
+env:
+  API_BASE_URL: "https://router.huggingface.co/v1"
+  MODEL_NAME: "Qwen/Qwen2.5-72B-Instruct"
 tags:
   - openenv
   - crowd-management
