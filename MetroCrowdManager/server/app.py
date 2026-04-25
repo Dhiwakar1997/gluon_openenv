@@ -1,72 +1,41 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-FastAPI application for the Metrocrowdmanager Environment.
+FastAPI app for the MetroCrowdManager MCP environment.
 
-This module creates an HTTP server that exposes the MetrocrowdmanagerEnvironment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
-
-Endpoints:
-    - POST /reset: Reset the environment
-    - POST /step: Execute an action
-    - GET /state: Get current environment state
-    - GET /schema: Get action/observation schemas
-    - WS /ws: WebSocket endpoint for persistent sessions
-
-Usage:
-    # Development (with auto-reload):
-    uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
-
-    # Production:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-    # Or run directly:
-    python -m server.app
+`create_app` is given the generic `Action` base class as `action_cls` so
+that incoming MCP payloads (`list_tools`, `call_tool`) are routed by the
+serializer to their built-in classes. Our own `SubmitResponseAction` is
+validated inside the environment's `_step_impl`.
 """
 
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:  # pragma: no cover
     raise ImportError(
-        "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
+        "openenv is required for the web interface. Install with `uv sync`."
     ) from e
 
 try:
-    from ..models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from ..models import MetrocrowdmanagerObservation, SubmitResponseAction
     from .MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
 except (ImportError, ModuleNotFoundError):
-    from models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from models import MetrocrowdmanagerObservation, SubmitResponseAction
     from server.MetroCrowdManager_environment import MetrocrowdmanagerEnvironment
 
 
-# Create the app with web interface and README integration
+# `SubmitResponseAction` has `extra="allow"`, so the HTTP serializer
+# happily validates *any* JSON payload (including MCP `list_tools` /
+# `call_tool` shapes). The env's `step()` then re-coerces those into the
+# right MCP action type before invoking the parent dispatcher.
 app = create_app(
     MetrocrowdmanagerEnvironment,
-    MetrocrowdmanagerAction,
+    SubmitResponseAction,
     MetrocrowdmanagerObservation,
     env_name="MetroCrowdManager",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=1,
 )
 
 
 def main():
-    """
-    Entry point for direct execution via uv run or python -m.
-
-    Parses CLI arguments and starts the uvicorn server.
-
-        uv run --project . server
-        uv run --project . server --port 8001
-        python -m MetroCrowdManager.server.app --port 8001
-
-    For production deployments, consider using uvicorn directly with
-    multiple workers:
-        uvicorn MetroCrowdManager.server.app:app --workers 4
-    """
     import argparse
     import uvicorn
 
@@ -74,7 +43,6 @@ def main():
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
-
     uvicorn.run(app, host=args.host, port=args.port)
 
 

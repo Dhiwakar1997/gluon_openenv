@@ -1,82 +1,126 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""MetroCrowdManager async client for the agentic MCP environment."""
 
-"""MetroCrowdManager Environment Client."""
-
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
-from openenv.core.env_server.types import State
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ListToolsAction,
+    ListToolsObservation,
+    Tool,
+    ToolError,
+)
+from openenv.core.env_server.types import Action, Observation, State
 
 try:
-    from .models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from .models import MetrocrowdmanagerObservation, SubmitResponseAction
 except ImportError:
-    from models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from models import MetrocrowdmanagerObservation, SubmitResponseAction
+
+
+ClientAction = Union[
+    SubmitResponseAction,
+    CallToolAction,
+    ListToolsAction,
+]
+ClientObservation = Union[
+    MetrocrowdmanagerObservation,
+    CallToolObservation,
+    ListToolsObservation,
+]
+
 
 class MetrocrowdmanagerEnv(
-    EnvClient[MetrocrowdmanagerAction, MetrocrowdmanagerObservation, State]
+    EnvClient[ClientAction, ClientObservation, State]
 ):
+    """Client for the MetroCrowdManager MCP environment.
+
+    Supports three action shapes:
+
+      * ``SubmitResponseAction(content=...)`` — submit final answer for the
+        current step. Episode terminates for ``ticket_booking`` and
+        ``ticket_issuance``; advances to next train arrival for
+        ``crowd_announcement``.
+      * ``CallToolAction(tool_name=..., arguments=...)`` — invoke an MCP
+        tool. Returns a ``CallToolObservation``.
+      * ``ListToolsAction()`` — discover available tools.
+
+    Example::
+
+        async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as env:
+            obs = await env.reset(task="ticket_booking")
+            tools = await env.step(ListToolsAction())
+            r = await env.step(CallToolAction(
+                tool_name="validate_destination",
+                arguments={"destination": "Tech Park"},
+            ))
+            done = await env.step(SubmitResponseAction(
+                content='{"time": "10:15", "from": "Riverside", ...}',
+                metadata={"turn_history": [...]},
+            ))
     """
-    Client for the MetroCrowdManager Environment.
 
-    This client maintains a persistent WebSocket connection to the environment
-    server, enabling efficient multi-step interactions with lower latency.
+    def _step_payload(self, action: ClientAction) -> Dict[str, Any]:
+        return action.model_dump()
 
-    Example:
-        >>> async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as client:
-        ...     result = await client.reset(task="crowd_assessment")
-        ...    
-        ...
-        ...     result = await client.step(
-        ...         MetrocrowdmanagerAction(response_text="Platform Zone Color Codes: [...]")
-        ...     )
-        ...    
-    """
-
-    def _step_payload(self, action: MetrocrowdmanagerAction) -> Dict[str, Any]:
-        """Convert action to JSON payload for step message."""
-        return {
-            "response_text": action.response_text,
-        }
-
-    def _parse_result(self, payload: Dict[str, Any]) -> StepResult[MetrocrowdmanagerObservation]:
-        """Parse server response into StepResult."""
-        obs_data = payload.get("observation", {})
-        observation = MetrocrowdmanagerObservation(
-            num_coaches=obs_data.get("num_coaches", 10),
-            train_crowd=obs_data.get("train_crowd", []),
-            platform_crowd=obs_data.get("platform_crowd", []),
-            prompt_text=obs_data.get("prompt_text", ""),
-            current_step=obs_data.get("current_step", 0),
-            max_steps=obs_data.get("max_steps", 1),
-            station_name=obs_data.get("station_name", ""),
-            task_name=obs_data.get("task_name", "crowd_assessment"),
-            done=payload.get("done", False),
-            reward=payload.get("reward"),
-            metadata=obs_data.get("metadata", {}),
-        )
-
+    def _parse_result(self, payload: Dict[str, Any]) -> StepResult[ClientObservation]:
+        obs_data = payload.get("observation") or payload
+        obs_type = obs_data.get("type") or _infer_observation_type(obs_data)
+        observation: Observation
+        if obs_type == "list_tools":
+            tools = [
+                t if isinstance(t, Tool) else Tool(**t)
+                for t in obs_data.get("tools", [])
+            ]
+            observation = ListToolsObservation(
+                tools=tools,
+                done=obs_data.get("done", False),
+                reward=obs_data.get("reward"),
+                metadata=obs_data.get("metadata", {}),
+            )
+        elif obs_type == "call_tool":
+            err_data = obs_data.get("error")
+            error = (
+                ToolError(**err_data)
+                if isinstance(err_data, dict)
+                else err_data
+            )
+            observation = CallToolObservation(
+                tool_name=obs_data.get("tool_name", ""),
+                result=obs_data.get("result"),
+                error=error,
+                done=obs_data.get("done", False),
+                reward=obs_data.get("reward"),
+                metadata=obs_data.get("metadata", {}),
+            )
+        else:
+            observation = MetrocrowdmanagerObservation(
+                task_name=obs_data.get("task_name", "ticket_booking"),
+                prompt_text=obs_data.get("prompt_text", ""),
+                current_step=obs_data.get("current_step", 0),
+                max_steps=obs_data.get("max_steps", 1),
+                passenger_message=obs_data.get("passenger_message", ""),
+                scenario_summary=obs_data.get("scenario_summary", {}),
+                reward_breakdown=obs_data.get("reward_breakdown", {}),
+                done=obs_data.get("done", False),
+                reward=obs_data.get("reward"),
+                metadata=obs_data.get("metadata", {}),
+            )
         return StepResult(
             observation=observation,
-            reward=payload.get("reward"),
-            done=payload.get("done", False),
+            reward=payload.get("reward") if "reward" in payload else observation.reward,
+            done=payload.get("done", observation.done),
         )
 
     def _parse_state(self, payload: Dict[str, Any]) -> State:
-        """Parse server response into State object."""
-        return State(
-            episode_id=payload.get("episode_id"),
-            step_count=payload.get("step_count", 0),
-            task_name=payload.get("task_name"),
-            max_steps=payload.get("max_steps"),
-            train_crowd=payload.get("train_crowd"),
-            platform_crowd=payload.get("platform_crowd"),
-            station_name=payload.get("station_name"),
-            total_reward=payload.get("total_reward"),
-            step_rewards=payload.get("step_rewards"),
-            done=payload.get("done"),
-        )
+        return State(**{k: v for k, v in payload.items() if k != "type"})
+
+
+def _infer_observation_type(obs_data: Dict[str, Any]) -> str:
+    if "tools" in obs_data:
+        return "list_tools"
+    if "tool_name" in obs_data:
+        return "call_tool"
+    return "submission"

@@ -1,34 +1,52 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-MetroCrowdManager Environment Implementation.
+MetroCrowdManager — agentic MCP environment.
 
-A stateful metro station crowd management environment where an AI agent
-produces redirection announcements evaluated across 10 reward dimensions.
-Supports 3 tasks with progressive difficulty:
-  - crowd_assessment (easy):  single-step color code mapping
-  - redirection (medium):     single-step full announcement
-  - multi_train (hard):       8-step evolving crowd management
+Subclasses `MCPEnvironment`. Three tasks, each driven by tool calls:
+
+    ticket_booking      — converse with a (scripted) passenger, validate
+                          destination, quote a fare, run a payment loop.
+    ticket_issuance     — fetch platform + crowd info, compute an ideal
+                          zone, emit a structured JSON ticket.
+    crowd_announcement  — across 3-4 train arrivals, fetch crowd info and
+                          emit a redirection announcement per arrival.
+
+Tool calls flow through the inherited MCP routing. The agent's final
+text submission flows through `_step_impl` as a `SubmitResponseAction`,
+which is where rewards are computed.
+
+This module is intentionally light on per-turn logging — the rollout
+loop in `training/rollout.py` is the source of truth for `turn_history`,
+which it passes to `_step_impl` via `SubmitResponseAction.metadata`.
 """
 
-import random
-import re
-from typing import Any, List, Optional
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from openenv.core.env_server.interfaces import Environment
-from openenv.core.env_server.types import State
+from fastmcp import FastMCP
+from openenv.core.env_server.mcp_environment import MCPEnvironment
+from openenv.core.env_server.mcp_types import CallToolAction, ListToolsAction
+from openenv.core.env_server.types import Action, Observation, State
 
 try:
-    from ..models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from ..models import MetrocrowdmanagerObservation, SubmitResponseAction
 except ImportError:
-    from models import MetrocrowdmanagerAction, MetrocrowdmanagerObservation
+    from models import MetrocrowdmanagerObservation, SubmitResponseAction
 
 try:
+    from . import tools as tools_mod
+    from .agentic_rewards import (
+        format_reward,
+        info_sufficiency_reward,
+        payment_discipline_reward,
+        ticket_schema_validity,
+        tool_economy_reward,
+        tool_fidelity_reward,
+        tool_sequence_reward,
+    )
+    from .passenger_sim import PassengerSim
     from .rewards import (
         compute_clarity,
         compute_color_grading,
@@ -42,7 +60,19 @@ try:
         compute_politeness,
         compute_sequential_direction,
     )
-except ImportError:
+    from .scenarios import Scenario, build_scenario
+except ImportError:  # pragma: no cover
+    import tools as tools_mod
+    from agentic_rewards import (
+        format_reward,
+        info_sufficiency_reward,
+        payment_discipline_reward,
+        ticket_schema_validity,
+        tool_economy_reward,
+        tool_fidelity_reward,
+        tool_sequence_reward,
+    )
+    from passenger_sim import PassengerSim
     from rewards import (
         compute_clarity,
         compute_color_grading,
@@ -56,175 +86,112 @@ except ImportError:
         compute_politeness,
         compute_sequential_direction,
     )
+    from scenarios import Scenario, build_scenario
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-STATION_NAMES = [
-    "Central Station",
-    "Riverside",
-    "University",
-    "Market Square",
-    "Tech Park",
-    "Lakeside",
-    "Airport Terminal",
-    "Old Town",
-    "Harbor View",
-    "Greenfield",
-    "North Bridge",
-    "South Gate",
-]
-
-NUM_COACHES = 10
+VALID_TASKS = ("ticket_booking", "ticket_issuance", "crowd_announcement")
+DEFAULT_TASK = "ticket_booking"
 
 
-def _coach_labels(num_coaches: int) -> List[str]:
-    """Generate coach labels A, B, C, ... dynamically."""
-    return [chr(ord("A") + i) for i in range(num_coaches)]
-
-TASK_CONFIG = {
-    "crowd_assessment": {"max_steps": 1},
-    "redirection": {"max_steps": 1},
-    "multi_train": {"max_steps": 8},
-}
-
-
-# ---------------------------------------------------------------------------
-# Crowd generation helpers
-# ---------------------------------------------------------------------------
-
-def generate_train_crowd(
-    num_coaches: int = NUM_COACHES,
-    pattern_override: Optional[str] = None,
-    bias_hard: bool = False,
-) -> List[int]:
-    """Generate train coach occupancy percentages using variety patterns."""
-    if pattern_override:
-        pattern = pattern_override
-    elif bias_hard:
-        # Hard task: 70% chance of tough patterns
-        pattern = random.choices(
-            ["uniform_low", "uniform_high", "front_heavy", "rear_heavy",
-             "one_outlier_empty", "one_outlier_packed", "random"],
-            weights=[5, 25, 20, 20, 5, 5, 20],
-            k=1,
-        )[0]
-    else:
-        pattern = random.choices(
-            ["uniform_low", "uniform_high", "front_heavy", "rear_heavy",
-             "one_outlier_empty", "one_outlier_packed", "random"],
-            weights=[15, 15, 15, 15, 10, 10, 20],
-            k=1,
-        )[0]
-
-    half = num_coaches // 2
-
-    if pattern == "uniform_low":
-        return [random.randint(20, 45) for _ in range(num_coaches)]
-    elif pattern == "uniform_high":
-        return [random.randint(70, 95) for _ in range(num_coaches)]
-    elif pattern == "front_heavy":
-        return [random.randint(70, 95) for _ in range(half)] + [
-            random.randint(20, 45) for _ in range(num_coaches - half)
-        ]
-    elif pattern == "rear_heavy":
-        return [random.randint(20, 45) for _ in range(half)] + [
-            random.randint(70, 95) for _ in range(num_coaches - half)
-        ]
-    elif pattern == "one_outlier_empty":
-        crowd = [random.randint(55, 85) for _ in range(num_coaches)]
-        crowd[random.randint(0, num_coaches - 1)] = random.randint(15, 30)
-        return crowd
-    elif pattern == "one_outlier_packed":
-        crowd = [random.randint(30, 55) for _ in range(num_coaches)]
-        crowd[random.randint(0, num_coaches - 1)] = random.randint(85, 95)
-        return crowd
-    else:  # "random"
-        return [random.randint(20, 95) for _ in range(num_coaches)]
-
-
-def _add_new_passengers(
-    platform_crowd: List[float],
-    num_coaches: int,
-    bias_hard: bool = False,
-) -> List[float]:
-    """Add new passengers arriving at the platform between trains."""
-    if bias_hard:
-        growth = random.choices(
-            ["rush", "offpeak", "event", "normal"],
-            weights=[50, 10, 20, 20],
-            k=1,
-        )[0]
-    else:
-        growth = random.choices(
-            ["rush", "offpeak", "event", "normal"],
-            weights=[20, 20, 10, 50],
-            k=1,
-        )[0]
-
-    event_zones = set()
-    if growth == "event":
-        event_zones = set(random.sample(range(num_coaches), min(2, num_coaches)))
-
-    result = list(platform_crowd)
-    for i in range(num_coaches):
-        if growth == "rush":
-            new = random.randint(10, 60)
-        elif growth == "offpeak":
-            new = random.randint(2, 10)
-        elif growth == "event" and i in event_zones:
-            new = random.randint(40, 60)
-        elif growth == "event":
-            new = random.randint(5, 15)
-        else:  # normal
-            new = random.randint(5, 30)
-
-        # Entrance bias: zones A & B get slightly more arrivals
-        if i < 2:
-            new = int(new * random.uniform(1.1, 1.5))
-
-        result[i] = min(100.0, result[i] + new)
-
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
-
-class MetrocrowdmanagerEnvironment(Environment):
-    """
-    Metro station crowd management RL environment.
-
-    The agent receives train coach occupancy and platform zone crowd
-    percentages, then produces structured redirection responses evaluated
-    across 10 reward dimensions.
-
-    Tasks:
-        crowd_assessment (easy):  Map crowd percentages to hex color codes.
-        redirection (medium):     Full announcement with redistribution + colors.
-        multi_train (hard):       8-step evolving crowd management.
-    """
+class MetrocrowdmanagerEnvironment(MCPEnvironment):
+    """Agentic metro environment exposing 11 simulated MCP tools."""
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self) -> None:
-        super().__init__()
-        self._state = State(episode_id=str(uuid4()), step_count=0)
-        self._task_name = "crowd_assessment"
-        self._max_steps = 1
-        self._num_coaches = NUM_COACHES
-        self._train_crowd: List[int] = []
-        self._platform_crowd: List[float] = []
-        self._station_name = ""
-        self._platform_number: int = 1
-        self._total_reward = 0.0
+        # Build the FastMCP server first; MCPEnvironment.__init__ wires it up.
+        self._mcp = FastMCP("MetroCrowdManager")
+        self._scenario: Optional[Scenario] = None
+        self._passenger: Optional[PassengerSim] = None
+        self._task_name: str = DEFAULT_TASK
+        self._max_steps: int = 1
+        self._current_step: int = 0
+        self._episode_id: str = str(uuid4())
         self._step_rewards: List[float] = []
-        self._crowd_history: List[dict] = []
+        self._reward_breakdowns: List[Dict[str, float]] = []
 
-    # ---- reset -----------------------------------------------------------
+        self._register_tools()
+        super().__init__(self._mcp)
+
+    # ------------------------------------------------------------------ tools
+
+    def _register_tools(self) -> None:
+        """Register tool wrappers that close over `self` and read live state.
+
+        Each wrapper guards against being invoked before `reset()` has
+        populated `self._scenario` and rejects calls in tasks where the tool
+        isn't applicable (so the agent gets fast feedback rather than silently
+        useful data from the wrong context).
+        """
+        env = self
+
+        def _require_scenario() -> Scenario:
+            if env._scenario is None:
+                raise RuntimeError("Environment has not been reset; call reset() first.")
+            return env._scenario
+
+        @self._mcp.tool()
+        def get_platform_for_destination(destination: str) -> dict:
+            """Look up the platform number for a destination station."""
+            return tools_mod.get_platform_for_destination(_require_scenario(), destination)
+
+        @self._mcp.tool()
+        def get_platform_crowd(platform: int) -> dict:
+            """Get per-zone platform crowd percentages (10 zones, A-J)."""
+            return tools_mod.get_platform_crowd(_require_scenario(), int(platform))
+
+        @self._mcp.tool()
+        def get_train_crowd_occupation(platform: int) -> dict:
+            """Get per-coach occupancy percentages for the train at a platform."""
+            return tools_mod.get_train_crowd_occupation(_require_scenario(), int(platform))
+
+        @self._mcp.tool()
+        def get_current_time() -> dict:
+            """Return the current station-system time as HH:MM."""
+            return tools_mod.get_current_time(_require_scenario())
+
+        @self._mcp.tool()
+        def validate_destination(destination: str) -> dict:
+            """Check whether a destination is a valid station on this network."""
+            return tools_mod.validate_destination(_require_scenario(), destination)
+
+        @self._mcp.tool()
+        def get_ticket_cost(
+            source: str, destination: str, passenger_count: int
+        ) -> dict:
+            """Quote the ticket fare for source -> destination given a count."""
+            return tools_mod.get_ticket_cost(
+                _require_scenario(), source, destination, int(passenger_count)
+            )
+
+        @self._mcp.tool()
+        def initiate_payment(amount: float, passenger_count: int) -> dict:
+            """Start a payment for the given amount; returns a payment_id to poll."""
+            return tools_mod.initiate_payment(
+                _require_scenario(), float(amount), int(passenger_count)
+            )
+
+        @self._mcp.tool()
+        def check_payment_status(payment_id: str) -> dict:
+            """Poll a payment_id; resolves to success/failed after a few polls."""
+            return tools_mod.check_payment_status(_require_scenario(), payment_id)
+
+        @self._mcp.tool()
+        def list_valid_stations() -> dict:
+            """List every station currently served on the network."""
+            return tools_mod.list_valid_stations(_require_scenario())
+
+        @self._mcp.tool()
+        def get_ideal_zone(platform: int) -> dict:
+            """Recommend a single ideal platform zone for a single passenger."""
+            return tools_mod.get_ideal_zone(_require_scenario(), int(platform))
+
+        @self._mcp.tool()
+        def get_ideal_distribution(platform: int) -> dict:
+            """Recommend the full 10-zone ideal crowd distribution."""
+            return tools_mod.get_ideal_distribution(_require_scenario(), int(platform))
+
+    # ------------------------------------------------------------------ reset
 
     def reset(
         self,
@@ -232,299 +199,405 @@ class MetrocrowdmanagerEnvironment(Environment):
         episode_id: Optional[str] = None,
         **kwargs: Any,
     ) -> MetrocrowdmanagerObservation:
-        """Reset the environment and start a new episode.
-
-        Args:
-            seed: Optional random seed for reproducibility.
-            episode_id: Optional custom episode identifier.
-            **kwargs: task (str) — one of "crowd_assessment", "redirection",
-                      "multi_train". Defaults to "crowd_assessment".
-        """
-        task = kwargs.get("task", "crowd_assessment")
-        if task not in TASK_CONFIG:
-            task = "crowd_assessment"
+        task = kwargs.get("task") or kwargs.get("task_name") or DEFAULT_TASK
+        if task not in VALID_TASKS:
+            task = DEFAULT_TASK
         self._task_name = task
-        self._num_coaches = kwargs.get("num_coaches", NUM_COACHES)
-        nc = self._num_coaches
-
-        if seed is not None:
-            random.seed(seed)
-
-        self._state = State(
-            episode_id=episode_id or str(uuid4()),
-            step_count=0,
-        )
-        self._max_steps = TASK_CONFIG[task]["max_steps"]
-        self._station_name = random.choice(STATION_NAMES)
-        self._platform_number = random.randint(1, 8)
-        self._total_reward = 0.0
+        self._scenario = build_scenario(task, seed=seed)
+        self._episode_id = episode_id or str(uuid4())
+        self._current_step = 0
         self._step_rewards = []
+        self._reward_breakdowns = []
 
-        # --- Initialise platform crowd ---
-        if task == "crowd_assessment":
-            self._platform_crowd = [float(random.randint(20, 50)) for _ in range(nc)]
-        elif task == "redirection":
-            if random.random() < 0.15:
-                # Balanced scenario — low variance
-                base = random.randint(40, 60)
-                self._platform_crowd = [
-                    float(max(0, min(100, base + random.randint(-8, 8))))
-                    for _ in range(nc)
-                ]
-            else:
-                self._platform_crowd = [float(random.randint(15, 85)) for _ in range(nc)]
-        else:  # multi_train — start empty, add initial wave
-            self._platform_crowd = [0.0] * nc
-            for i in range(nc):
-                base = float(random.randint(5, 25))
-                if i < 2:
-                    base = min(100.0, base * random.uniform(1.1, 1.5))
-                self._platform_crowd[i] = base
+        if task == "ticket_booking":
+            assert self._scenario.passenger_goal is not None
+            self._passenger = PassengerSim(
+                goal=self._scenario.passenger_goal,
+                rng_seed=seed if seed is not None else 0,
+            )
+            self._max_steps = 1
+        elif task == "ticket_issuance":
+            self._passenger = None
+            self._max_steps = 1
+        else:  # crowd_announcement
+            self._passenger = None
+            self._max_steps = max(1, len(self._scenario.train_arrivals))
 
-        # --- Generate first train ---
-        if task == "crowd_assessment":
-            self._train_crowd = generate_train_crowd(num_coaches=nc, pattern_override="random")
-        elif task == "multi_train":
-            self._train_crowd = generate_train_crowd(num_coaches=nc, bias_hard=True)
-        else:
-            self._train_crowd = generate_train_crowd(num_coaches=nc)
+        return self._build_observation(done=False, reward_breakdown={})
 
-        self._crowd_history = [
-            {
-                "step": 0,
-                "train_crowd": list(self._train_crowd),
-                "platform_crowd": self._rounded_platform(),
-            }
-        ]
-
-        return MetrocrowdmanagerObservation(
-            platform_number=self._platform_number,
-            num_coaches=nc,
-            train_crowd=list(self._train_crowd),
-            platform_crowd=self._rounded_platform(),
-            prompt_text=self._build_prompt(),
-            current_step=1,
-            max_steps=self._max_steps,
-            station_name=self._station_name,
-            task_name=self._task_name,
-            done=False,
-            reward=0.0,
-        )
-
-    # ---- step ------------------------------------------------------------
+    # ------------------------------------------------------------------ step
 
     def step(
         self,
-        action: MetrocrowdmanagerAction,
+        action: Action,
         timeout_s: Optional[float] = None,
         **kwargs: Any,
-    ) -> MetrocrowdmanagerObservation:
-        """Process the agent's response and advance the environment state."""
-        self._state.step_count += 1
-        response_text = action.response_text
-        platform_int = self._rounded_platform()
-        nc = self._num_coaches
+    ) -> Observation:
+        """Route MCP types via discriminator BEFORE delegating to the parent.
 
-        # --- Compute all 11 rewards ---
-        rewards = {
-            "politeness": compute_politeness(response_text, self._train_crowd, platform_int, nc),
-            "distribution_accuracy": compute_distribution_accuracy(response_text, self._train_crowd, platform_int, nc),
-            "conservation_accuracy": compute_conservation_accuracy(response_text, self._train_crowd, platform_int, nc),
-            "feasibility_accuracy": compute_feasibility_accuracy(response_text, self._train_crowd, platform_int, nc),
-            "color_grading": compute_color_grading(response_text, self._train_crowd, platform_int, nc),
-            "language_consistency": compute_language_consistency(response_text, self._train_crowd, platform_int, nc),
-            "noop_detection": compute_noop_detection(response_text, self._train_crowd, platform_int, nc),
-            "clarity": compute_clarity(response_text, self._train_crowd, platform_int, nc),
-            "sequential_direction": compute_sequential_direction(response_text, self._train_crowd, platform_int, nc),
-            "factual_accuracy": compute_factual_accuracy(response_text, self._train_crowd, platform_int, nc),
-            "platform_mention": compute_platform_mention(response_text, self._platform_number),
-        }
+        The HTTP serializer registers ``SubmitResponseAction`` as
+        ``action_cls`` (with ``extra="allow"``), so MCP payloads come
+        through the wire validated as a SubmitResponseAction with extra
+        ``tool_name`` / ``arguments`` / ``tools`` fields. We rebuild the
+        proper MCP action from those fields and hand it back to the
+        parent's ``step()``.
+        """
+        coerced = self._coerce_to_mcp_if_possible(action)
+        return super().step(coerced, timeout_s=timeout_s, **kwargs)
 
-        # --- Task-specific weighting ---
-        if self._task_name == "crowd_assessment":
-            total_reward = (
-                0.50 * rewards["color_grading"]
-                + 0.25 * rewards["language_consistency"]
-                + 0.25 * rewards["clarity"]
+    async def step_async(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
+        coerced = self._coerce_to_mcp_if_possible(action)
+        return await super().step_async(coerced, timeout_s=timeout_s, **kwargs)
+
+    def _coerce_to_mcp_if_possible(self, action: Action) -> Action:
+        if isinstance(action, (CallToolAction, ListToolsAction)):
+            return action
+        action_type = getattr(action, "type", None)
+        # extras may be in __pydantic_extra__ (Pydantic v2) or attributes
+        extras = getattr(action, "__pydantic_extra__", None) or {}
+
+        def _f(name: str, default: Any = None) -> Any:
+            return getattr(action, name, extras.get(name, default))
+
+        if action_type == "list_tools":
+            return ListToolsAction()
+        if action_type == "call_tool":
+            return CallToolAction(
+                tool_name=_f("tool_name", ""),
+                arguments=_f("arguments", {}) or {},
             )
-        else:
-            total_reward = (
-                0.30 * rewards["distribution_accuracy"]
-                + 0.10 * rewards["conservation_accuracy"]
-                + 0.10 * rewards["feasibility_accuracy"]
-                + 0.10 * rewards["color_grading"]
-                + 0.05 * rewards["politeness"]
-                + 0.10 * rewards["factual_accuracy"]
-                + 0.05 * rewards["noop_detection"]
-                + 0.05 * rewards["clarity"]
-                + 0.05 * rewards["sequential_direction"]
-                + 0.05 * rewards["language_consistency"]
-                + 0.05 * rewards["platform_mention"]
-            )
+        return action
 
-        self._total_reward += total_reward
-        self._step_rewards.append(total_reward)
+    def _step_impl(
+        self,
+        action: Action,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
+        """Handle SubmitResponseAction. MCP actions were already routed above."""
+        if self._scenario is None:
+            raise RuntimeError("Environment has not been reset; call reset() first.")
 
-        # --- Done? ---
-        done = self._state.step_count >= self._max_steps
+        content, turn_history = self._extract_submission(action)
 
-        # --- Evolve crowd for multi_train (if not final step) ---
-        if self._task_name == "multi_train" and not done:
-            self._evolve_crowd(response_text, total_reward)
+        if self._task_name == "crowd_announcement":
+            return self._handle_announcement_step(content, turn_history)
+        return self._handle_terminal_submission(content, turn_history)
 
-        self._crowd_history.append(
-            {
-                "step": self._state.step_count,
-                "train_crowd": list(self._train_crowd),
-                "platform_crowd": self._rounded_platform(),
-                "rewards": rewards,
-                "total_reward": total_reward,
-            }
-        )
-
-        return MetrocrowdmanagerObservation(
-            platform_number=self._platform_number,
-            num_coaches=nc,
-            train_crowd=list(self._train_crowd),
-            platform_crowd=self._rounded_platform(),
-            prompt_text=self._build_prompt() if not done else "",
-            current_step=self._state.step_count + (0 if done else 1),
-            max_steps=self._max_steps,
-            station_name=self._station_name,
-            task_name=self._task_name,
-            done=done,
-            reward=total_reward,
-            metadata={
-                "rewards": rewards,
-                "total_reward": total_reward,
-                "step": self._state.step_count,
-            },
-        )
-
-    # ---- state -----------------------------------------------------------
+    # ------------------------------------------------------------------ state
 
     @property
     def state(self) -> State:
+        sc = self._scenario
         return State(
-            episode_id=self._state.episode_id,
-            step_count=self._state.step_count,
+            episode_id=self._episode_id,
+            step_count=self._current_step,
             task_name=self._task_name,
             max_steps=self._max_steps,
-            train_crowd=list(self._train_crowd),
-            platform_crowd=self._rounded_platform(),
-            station_name=self._station_name,
-            platform_number=self._platform_number,
-            total_reward=self._total_reward,
+            done=self._current_step >= self._max_steps,
+            station_list=list(sc.station_list) if sc else [],
+            source_station=sc.source_station if sc else "",
+            current_time=sc.current_time if sc else "",
+            passenger_state=self._passenger.snapshot() if self._passenger else None,
             step_rewards=list(self._step_rewards),
-            crowd_history=self._crowd_history,
-            done=self._state.step_count >= self._max_steps,
         )
 
-    # ---- internal --------------------------------------------------------
+    # ------------------------------------------------------------------ helpers
 
-    def _rounded_platform(self) -> List[int]:
-        return [max(0, min(100, round(p))) for p in self._platform_crowd]
+    def _extract_submission(self, action: Action) -> tuple[str, List[dict]]:
+        """Pull `content` and `turn_history` from a SubmitResponseAction or
+        a generic Action carrying the same fields."""
+        content = ""
+        turn_history: List[dict] = []
+        if isinstance(action, SubmitResponseAction):
+            content = action.content
+            turn_history = action.metadata.get("turn_history", []) or []
+        else:
+            data = getattr(action, "metadata", {}) or {}
+            content = data.get("content", "") or getattr(action, "content", "") or ""
+            turn_history = data.get("turn_history", []) or []
+        return content, turn_history
 
-    def _evolve_crowd(self, response_text: str, step_reward: float) -> None:
-        """Evolve the platform crowd state for multi_train task."""
-        nc = self._num_coaches
+    # --- terminal submission (Tasks 1, 2) -----------------------------
 
-        # 1. Simulate redirection effect based on agent's recommendation
-        proposed = self._parse_proposed_distribution(response_text)
-        if proposed is not None and len(proposed) == nc:
-            # Better responses → higher compliance (0.3 to 0.7)
-            compliance = 0.3 + 0.4 * step_reward
-            for i in range(nc):
-                self._platform_crowd[i] = (
-                    (1 - compliance) * self._platform_crowd[i]
-                    + compliance * proposed[i]
-                )
-
-        # 2. Simulate train departure — passengers board
-        for i in range(nc):
-            boarding_rate = (100 - self._train_crowd[i]) / 100.0 * 0.5
-            self._platform_crowd[i] = max(0.0, self._platform_crowd[i] * (1 - boarding_rate))
-
-        # 3. Generate next train
-        self._train_crowd = generate_train_crowd(num_coaches=nc, bias_hard=True)
-
-        # 4. Add new passengers arriving at the platform
-        self._platform_crowd = _add_new_passengers(
-            self._platform_crowd, nc, bias_hard=True,
+    def _handle_terminal_submission(
+        self, content: str, turn_history: List[dict]
+    ) -> MetrocrowdmanagerObservation:
+        breakdown = self._compute_rewards(content, turn_history)
+        total = sum(breakdown.values())
+        self._current_step += 1
+        self._step_rewards.append(total)
+        self._reward_breakdowns.append(breakdown)
+        return self._build_observation(
+            done=True, reward_breakdown=breakdown, last_reward=total
         )
 
-        # 5. With 15% chance, force a balanced state (no-op test)
-        if random.random() < 0.15:
-            avg = sum(self._platform_crowd) / nc
-            self._platform_crowd = [
-                max(0.0, min(100.0, avg + random.uniform(-5, 5)))
-                for _ in range(nc)
+    # --- per-arrival submission (Task 3) ------------------------------
+
+    def _handle_announcement_step(
+        self, content: str, turn_history: List[dict]
+    ) -> MetrocrowdmanagerObservation:
+        breakdown = self._compute_rewards(content, turn_history)
+        total = sum(breakdown.values())
+        self._current_step += 1
+        self._step_rewards.append(total)
+        self._reward_breakdowns.append(breakdown)
+
+        if self._scenario is not None:
+            self._scenario.current_arrival_idx = min(
+                self._current_step, len(self._scenario.train_arrivals) - 1
+            )
+
+        done = self._current_step >= self._max_steps
+        return self._build_observation(
+            done=done, reward_breakdown=breakdown, last_reward=total
+        )
+
+    # --- reward composition -------------------------------------------
+
+    def _compute_rewards(self, content: str, turn_history: List[dict]) -> Dict[str, float]:
+        task = self._task_name
+        if task == "ticket_booking":
+            return self._reward_ticket_booking(content, turn_history)
+        if task == "ticket_issuance":
+            return self._reward_ticket_issuance(content, turn_history)
+        return self._reward_crowd_announcement(content, turn_history)
+
+    def _reward_ticket_booking(
+        self, content: str, turn_history: List[dict]
+    ) -> Dict[str, float]:
+        sc = self._scenario
+        assert sc is not None
+
+        seq = tool_sequence_reward(turn_history, "ticket_booking")
+        fid = tool_fidelity_reward(turn_history)
+        eco = tool_economy_reward(turn_history, "ticket_booking")
+        fmt = format_reward(turn_history)
+        info = info_sufficiency_reward(turn_history, sc)
+        pay = payment_discipline_reward(turn_history, sc)
+        polite = compute_politeness(content, [], [], 10)
+        clarity = compute_clarity(content, [], [], 10)
+
+        return {
+            "tool_sequence":       0.20 * seq,
+            "tool_fidelity":       0.15 * fid,
+            "tool_economy":        0.10 * eco,
+            "format":              0.10 * fmt,
+            "info_sufficiency":    0.20 * info,
+            "payment_discipline":  0.15 * pay,
+            "politeness":          0.05 * polite,
+            "clarity":             0.05 * clarity,
+        }
+
+    def _reward_ticket_issuance(
+        self, content: str, turn_history: List[dict]
+    ) -> Dict[str, float]:
+        sc = self._scenario
+        assert sc is not None
+
+        seq = tool_sequence_reward(turn_history, "ticket_issuance")
+        fid = tool_fidelity_reward(turn_history)
+        eco = tool_economy_reward(turn_history, "ticket_issuance")
+        fmt = format_reward(turn_history)
+        ticket = ticket_schema_validity(content, sc)
+        lang = compute_language_consistency(content, [], [], 10)
+
+        return {
+            "tool_sequence":          0.25 * seq,
+            "tool_fidelity":          0.20 * fid,
+            "tool_economy":           0.10 * eco,
+            "format":                 0.10 * fmt,
+            "ticket_schema_validity": 0.30 * ticket,
+            "language_consistency":   0.05 * lang,
+        }
+
+    def _reward_crowd_announcement(
+        self, content: str, turn_history: List[dict]
+    ) -> Dict[str, float]:
+        sc = self._scenario
+        assert sc is not None
+        arrival = (
+            sc.train_arrivals[self._current_step]
+            if self._current_step < len(sc.train_arrivals)
+            else sc.train_arrivals[-1]
+        )
+        train = arrival["train_crowd"]
+        plat = arrival["platform_crowd"]
+        platform_num = arrival["platform"]
+        nc = len(train)
+
+        seq = tool_sequence_reward(turn_history, "crowd_announcement")
+        fid = tool_fidelity_reward(turn_history)
+        eco = tool_economy_reward(turn_history, "crowd_announcement")
+        fmt = format_reward(turn_history)
+        dist = compute_distribution_accuracy(content, train, plat, nc)
+        cons = compute_conservation_accuracy(content, train, plat, nc)
+        feas = compute_feasibility_accuracy(content, train, plat, nc)
+        color = compute_color_grading(content, train, plat, nc)
+        fact = compute_factual_accuracy(content, train, plat, nc)
+        platf = compute_platform_mention(content, platform_num)
+        noop = compute_noop_detection(content, train, plat, nc)
+        seqd = compute_sequential_direction(content, train, plat, nc)
+        clarity = compute_clarity(content, train, plat, nc)
+
+        return {
+            "tool_sequence":         0.15 * seq,
+            "tool_fidelity":         0.10 * fid,
+            "tool_economy":          0.05 * eco,
+            "format":                0.05 * fmt,
+            "distribution_accuracy": 0.20 * dist,
+            "conservation_accuracy": 0.10 * cons,
+            "feasibility_accuracy":  0.05 * feas,
+            "color_grading":         0.05 * color,
+            "factual_accuracy":      0.05 * fact,
+            "platform_mention":      0.05 * platf,
+            "noop_detection":        0.05 * noop,
+            "sequential_direction":  0.05 * seqd,
+            "clarity":               0.05 * clarity,
+        }
+
+    # --- observation builder ------------------------------------------
+
+    def _build_observation(
+        self,
+        done: bool,
+        reward_breakdown: Dict[str, float],
+        last_reward: float = 0.0,
+    ) -> MetrocrowdmanagerObservation:
+        prompt = "" if done else self._build_prompt()
+        passenger_message = ""
+        if self._passenger and not done:
+            passenger_message = self._passenger.last_utterance
+        scenario_summary = self._build_scenario_summary()
+
+        return MetrocrowdmanagerObservation(
+            task_name=self._task_name,
+            prompt_text=prompt,
+            current_step=min(self._current_step + 1, self._max_steps),
+            max_steps=self._max_steps,
+            passenger_message=passenger_message,
+            scenario_summary=scenario_summary,
+            reward_breakdown=dict(reward_breakdown),
+            done=done,
+            reward=float(last_reward) if reward_breakdown else 0.0,
+            metadata={
+                "episode_id": self._episode_id,
+                "step": self._current_step,
+            },
+        )
+
+    def _build_scenario_summary(self) -> Dict[str, Any]:
+        sc = self._scenario
+        if sc is None:
+            return {}
+        summary: Dict[str, Any] = {
+            "task": sc.task_name,
+            "source_station": sc.source_station,
+            "valid_destinations": sc.valid_destinations,
+        }
+        if sc.task_name == "crowd_announcement":
+            arrival = sc.train_arrivals[
+                min(self._current_step, len(sc.train_arrivals) - 1)
             ]
+            summary["current_arrival_idx"] = self._current_step
+            summary["total_arrivals"] = len(sc.train_arrivals)
+            summary["current_platform"] = arrival["platform"]
+        return summary
 
-    @staticmethod
-    def _parse_proposed_distribution(response_text: str) -> Optional[List[float]]:
-        pattern = r"Recommended Platform Distribution\s*:\s*\[([^\]]+)\]"
-        match = re.search(pattern, response_text, re.IGNORECASE)
-        if not match:
-            return None
-        try:
-            return [float(x.strip().rstrip("%")) for x in match.group(1).split(",")]
-        except (ValueError, IndexError):
-            return None
+    # --- prompt builders ----------------------------------------------
 
     def _build_prompt(self) -> str:
-        """Build the prompt text for the current step and task."""
-        tc = self._train_crowd
-        pc = self._rounded_platform()
-        nc = self._num_coaches
-        labels = _coach_labels(nc)
-        last = labels[-1]
+        if self._task_name == "ticket_booking":
+            return self._prompt_ticket_booking()
+        if self._task_name == "ticket_issuance":
+            return self._prompt_ticket_issuance()
+        return self._prompt_crowd_announcement()
 
-        coach_str = ", ".join(f"Coach {labels[i]}: {tc[i]}%" for i in range(nc))
-        zone_str = ", ".join(f"Zone {labels[i]}: {pc[i]}%" for i in range(nc))
+    def _prompt_ticket_booking(self) -> str:
+        sc = self._scenario
+        passenger = self._passenger
+        utterance = passenger.opening_line() if passenger else ""
+        return "\n".join(
+            [
+                f"You are a metro station ticket agent at {sc.source_station}.",
+                "A passenger has approached you. Your job is to:",
+                "  1. Find out where they are going.",
+                "  2. Confirm the destination is valid.",
+                "  3. Find out how many passengers are travelling.",
+                "  4. Quote the fare clearly.",
+                "  5. Initiate the payment and poll until it resolves.",
+                "  6. Communicate the outcome and any next step to the passenger.",
+                "",
+                "Use the available MCP tools to validate destinations, look up fares,",
+                "and run the payment loop. Respond politely and only initiate payment",
+                "AFTER you know the destination and passenger count.",
+                "",
+                f"Passenger: \"{utterance}\"",
+            ]
+        )
 
-        if self._task_name == "multi_train":
-            header = (
-                f"Upcoming train arriving at {self._station_name} station, Platform {self._platform_number}. "
-                f"[Step {self._state.step_count + 1}/{self._max_steps}]"
+    def _prompt_ticket_issuance(self) -> str:
+        sc = self._scenario
+        goal = sc.passenger_goal
+        # ticket_issuance scenarios don't carry a passenger_goal; pick a destination
+        # deterministically from the station list.
+        dest = (
+            goal.destination
+            if goal is not None
+            else next(
+                (s for s in sc.station_list if s != sc.source_station),
+                sc.station_list[-1],
             )
-        else:
-            header = f"Train arriving at {self._station_name} station, Platform {self._platform_number}."
-
-        lines = [
-            header,
-            f"Coach occupancy: {coach_str}",
-            f"Platform crowd at each coach zone: {zone_str}",
-            "",
-        ]
-
-        if self._task_name == "crowd_assessment":
-            lines += [
-                "Provide the color codes for each platform zone and train coach based on their crowd levels.",
+        )
+        return "\n".join(
+            [
+                f"You are issuing a metro ticket at {sc.source_station}.",
+                f"Destination: {dest}",
                 "",
-                "Respond in the following structured format:",
+                "Use the MCP tools to look up the platform, current platform crowd,",
+                "current train coach occupancy, and the ideal platform zone for this",
+                "passenger. Then return a single JSON object with these fields:",
                 "",
-                f"Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone {last}>]",
+                '  {"time": "HH:MM", "from": "<station>", "to": "<station>",',
+                '   "price": <number>, "platform": <int>, "ideal_zone": "<A-J>"}',
                 "",
-                f"Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach {last}>]",
-                "",
-                "Color code reference: #008000 (Green, <=40%), #FFFF00 (Yellow, 40-60%), #FF8C00 (Orange, 60-80%), #FF0000 (Red, >80%)",
+                "Use only data returned by tools — do not guess. Respond with the JSON",
+                "as your final message (no `<tool_call>` blocks).",
             ]
-        else:
-            lines += [
-                "Your announcement must begin by addressing passengers on the correct platform number.",
-                "",
-                "Respond in the following structured format:",
-                "",
-                'Announcement: "<your crowd redirection announcement>"',
-                "",
-                f"Recommended Platform Distribution: [<target % for Zone A>, <target % for Zone B>, ..., <target % for Zone {last}>]",
-                "",
-                f"Platform Zone Color Codes: [<hex color for Zone A>, <hex color for Zone B>, ..., <hex color for Zone {last}>]",
-                "",
-                f"Train Coach Color Codes: [<hex color for Coach A>, <hex color for Coach B>, ..., <hex color for Coach {last}>]",
-                "",
-                "Color code reference: #008000 (Green, <=40%), #FFFF00 (Yellow, 40-60%), #FF8C00 (Orange, 60-80%), #FF0000 (Red, >80%)",
-            ]
+        )
 
-        return "\n".join(lines)
+    def _prompt_crowd_announcement(self) -> str:
+        sc = self._scenario
+        idx = min(self._current_step, len(sc.train_arrivals) - 1)
+        arrival = sc.train_arrivals[idx]
+        platform = arrival["platform"]
+        return "\n".join(
+            [
+                f"Train arrival {idx + 1} of {len(sc.train_arrivals)} at {sc.source_station}.",
+                f"Approaching platform: {platform}",
+                "",
+                "Use the MCP tools to fetch this platform's current crowd, the train's",
+                "current coach occupancy, and the ideal redistribution. Then produce a",
+                "polite redirection announcement in the existing structured format:",
+                "",
+                '  Announcement: "<your announcement>"',
+                "  Recommended Platform Distribution: [<10 ints>]",
+                "  Platform Zone Color Codes: [<10 hex>]",
+                "  Train Coach Color Codes: [<10 hex>]",
+                "",
+                "Color reference: #008000 ≤40, #FFFF00 40-60, #FF8C00 60-80, #FF0000 >80.",
+                f"Mention platform {platform} in your announcement.",
+            ]
+        )
+
+    # --- close --------------------------------------------------------
+
+    def close(self) -> None:
+        super().close()
+        self._scenario = None
+        self._passenger = None

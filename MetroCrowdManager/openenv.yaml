@@ -5,26 +5,29 @@ runtime: fastapi
 app: server.app:app
 port: 8000
 description: >
-  Metro station crowd management RL environment. Agent receives train coach
-  occupancy and platform zone crowd percentages, must produce polite
-  redirection announcements with color-coded crowd indicators.
-version: "1.0.0"
+  Agentic metro station environment. The LLM orchestrates 11 simulated MCP
+  tools to (1) book tickets through a scripted passenger conversation,
+  (2) issue structured ticket layouts with platform/zone intel, and
+  (3) generate crowd redirection announcements across multiple train arrivals.
+version: "2.0.0"
 author: "Giridaran D, Dhiwakar Nagarajan"
 env:
   API_BASE_URL: "https://router.huggingface.co/v1"
-  MODEL_NAME: "Qwen/Qwen2.5-72B-Instruct"
+  MODEL_NAME: "Qwen/Qwen3-1.7B-Instruct"
 tags:
   - openenv
-  - crowd-management
+  - mcp
+  - agentic
+  - tool-use
   - metro
   - reinforcement-learning
 tasks:
-  - name: crowd_assessment
-    description: "Map crowd percentages to correct color codes for platform zones and train coaches (easy)"
-    difficulty: easy
-  - name: redirection
-    description: "Produce full redirection announcement with redistribution, color codes, and polite directions (medium)"
+  - name: ticket_booking
+    description: "Converse with a passenger, validate destination, quote fare, run the payment loop via MCP tools."
+    difficulty: hard
+  - name: ticket_issuance
+    description: "Use MCP tools to gather platform/crowd info and emit a structured JSON ticket."
     difficulty: medium
-  - name: multi_train
-    description: "Manage crowd across 8 evolving train arrivals with crisis surges and temporal adaptation (hard)"
+  - name: crowd_announcement
+    description: "Across 3-4 train arrivals, fetch crowd state via MCP tools and produce a redirection announcement per arrival."
     difficulty: hard

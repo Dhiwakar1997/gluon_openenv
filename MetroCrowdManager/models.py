@@ -1,57 +1,101 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-Data models for the MetroCrowdManager Environment.
+Data models for the MetroCrowdManager MCP environment.
 
-The MetroCrowdManager environment simulates metro station crowd management.
-An agent receives train coach occupancy and platform zone crowd data,
-then produces redirection announcements with color-coded crowd indicators.
+MetroCrowdManager subclasses `MCPEnvironment`. Three action types flow
+through `step()`:
+
+* `ListToolsAction` — ask the server which tools are available. Routed
+  automatically by the MCP base class. Not defined here.
+* `CallToolAction` — invoke one of the registered MCP tools with
+  arguments. Also routed automatically. Not defined here.
+* `SubmitResponseAction` — the agent's final answer for the episode
+  (Task 1, 2) or the current arrival step (Task 3). This is the only
+  action handled by our `_step_impl()`, and rewards are computed here.
+
+Observations have two shapes:
+
+* `CallToolObservation` (from MCP base class) — returned for every tool
+  call. Carries the tool's return value in `.result.data`.
+* `MetrocrowdmanagerObservation` — returned from `reset()` and from
+  `_step_impl()` after a `SubmitResponseAction`. Carries the prompt for
+  the next turn, reward breakdown, and episode metadata.
 """
 
-from typing import List
+from typing import Any, Dict, List, Literal, Optional
 
 from openenv.core.env_server.types import Action, Observation
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 
-class MetrocrowdmanagerAction(Action):
-    """Action for the MetroCrowdManager environment.
+class SubmitResponseAction(Action):
+    """Submit the agent's final text response for the current episode step.
 
-    The agent produces a structured text response containing:
-    - An announcement with crowd redirection instructions
-    - Recommended platform distribution percentages
-    - Platform zone color codes (hex)
-    - Train coach color codes (hex)
+    After a `SubmitResponseAction`:
+      * In `ticket_booking` and `ticket_issuance` the episode ends.
+      * In `crowd_announcement` the step advances to the next train
+        arrival until all arrivals are consumed.
+
+    `extra="allow"` so payloads survive the HTTP roundtrip when the
+    serializer falls back to validating against the env's registered
+    action class — MCP fields (``tool_name``, ``arguments``, ``tools``)
+    are tolerated and unused.
     """
 
-    response_text: str = Field(
-        ..., description="Agent's structured response text with announcement and color codes"
+    model_config = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+        arbitrary_types_allowed=True,
     )
+
+    type: str = Field(
+        default="submit_response",
+        description="Action type discriminator",
+    )
+    content: str = Field(
+        default="",
+        description="Final text the agent wants the environment to evaluate",
+    )
+
+
+# Kept as a re-export so existing imports (`from models import
+# MetrocrowdmanagerAction`) don't break during migration. `SubmitResponseAction`
+# is the canonical name.
+MetrocrowdmanagerAction = SubmitResponseAction
 
 
 class MetrocrowdmanagerObservation(Observation):
-    """Observation from the MetroCrowdManager environment.
+    """Observation emitted on reset and after a SubmitResponseAction.
 
-    Provides the current crowd state at a metro station including
-    train coach occupancy and platform zone crowd percentages.
+    Tool-call observations use MCP's `CallToolObservation` and do not
+    flow through this type.
     """
 
-    platform_number: int = Field(default=1, description="Platform number at the station (1-8)")
-    num_coaches: int = Field(default=10, description="Number of train coaches / platform zones")
-    train_crowd: List[int] = Field(
-        default_factory=list,
-        description="Current train coach occupancy percentages (0-100 per coach)",
+    task_name: str = Field(
+        default="ticket_booking",
+        description="Active task: ticket_booking | ticket_issuance | crowd_announcement",
     )
-    platform_crowd: List[int] = Field(
-        default_factory=list,
-        description="Current platform zone crowd percentages (0-100 per zone)",
+    prompt_text: str = Field(
+        default="",
+        description="Human-readable prompt for the agent's next turn",
     )
-    prompt_text: str = Field(default="", description="Human-readable scenario prompt with format instructions")
-    current_step: int = Field(default=0, description="Current step number (1-indexed for display)")
+    current_step: int = Field(default=0, description="1-indexed step number")
     max_steps: int = Field(default=1, description="Total steps in this episode")
-    station_name: str = Field(default="", description="Name of the metro station")
-    task_name: str = Field(default="crowd_assessment", description="Active task name")
+    passenger_message: str = Field(
+        default="",
+        description="Scripted passenger's latest utterance (Task 1 only, '' otherwise)",
+    )
+    scenario_summary: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Public episode metadata (source station, valid destinations, "
+            "current platform, arrival index). Excludes ground-truth values "
+            "the agent should discover via tools."
+        ),
+    )
+    reward_breakdown: Dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Per-reward-function scores for the most recent SubmitResponseAction. "
+            "Empty on reset."
+        ),
+    )
