@@ -45,12 +45,10 @@ except ImportError:  # pragma: no cover
 # Expected tool sequences per task
 # ---------------------------------------------------------------------------
 
-# Ordered "checkpoints" — each inner list is a group of alternatives, and
-# each group must appear at least once, in order. This allows natural
-# flexibility (e.g. the agent may call `list_valid_stations` before
-# `validate_destination`) while still checking the critical backbone.
+# Ordered checkpoints. Each group must appear at least once, in order.
 EXPECTED_SEQUENCE: Dict[str, List[List[str]]] = {
     "ticket_booking": [
+        ["list_valid_stations"],
         ["validate_destination"],
         ["get_ticket_cost"],
         ["initiate_payment"],
@@ -131,6 +129,19 @@ def has_malformed_tool_call(turn_history: List[dict]) -> bool:
                 return True
             if not isinstance(payload, dict) or "name" not in payload:
                 return True
+    return False
+
+
+def has_unclosed_tool_call(turn_history: List[dict]) -> bool:
+    """Detect `<tool_call>` blocks missing a closing `</tool_call>` tag."""
+    for turn in turn_history:
+        text = turn.get("text", "") or ""
+        if "<tool_call>" not in text:
+            continue
+        open_count = text.count("<tool_call>")
+        close_count = text.count("</tool_call>")
+        if open_count > close_count:
+            return True
     return False
 
 
@@ -278,6 +289,8 @@ def format_reward(turn_history: List[dict]) -> float:
     Malformed tool-call tags (open but not closed, non-JSON body) fail.
     """
     if not turn_history:
+        return 0.0
+    if has_unclosed_tool_call(turn_history):
         return 0.0
     good = 0
     for turn in turn_history:

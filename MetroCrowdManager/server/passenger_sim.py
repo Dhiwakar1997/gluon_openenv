@@ -167,6 +167,14 @@ class PassengerSim:
         """First utterance the agent sees at the start of the episode."""
         return self.opening_utterance
 
+    def scripted_messages(self) -> List[str]:
+        """Passenger utterances used as masked user turns in training/rollout."""
+        return [
+            self.opening_utterance,
+            self.template_choice["count"].format(n=self.goal.passenger_count),
+            self.template_choice["cost_confirm"],
+        ]
+
     def advance(self, agent_text: str, payment_outcome: Optional[str] = None) -> str:
         """Advance the state machine given the agent's latest turn.
 

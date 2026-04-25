@@ -41,7 +41,7 @@ from training.rollout import agentic_episode_async, SYSTEM_PROMPTS  # noqa: F401
 
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-7B-Instruct"
+MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.3-70B-Instruct"
 
 
 def build_generator(client: OpenAI, temperature: float, max_tokens: int):

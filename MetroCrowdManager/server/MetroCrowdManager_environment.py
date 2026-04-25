@@ -487,8 +487,10 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
     ) -> MetrocrowdmanagerObservation:
         prompt = "" if done else self._build_prompt()
         passenger_message = ""
+        passenger_messages: List[str] = []
         if self._passenger and not done:
             passenger_message = self._passenger.last_utterance
+            passenger_messages = self._passenger.scripted_messages()
         scenario_summary = self._build_scenario_summary()
 
         return MetrocrowdmanagerObservation(
@@ -504,6 +506,7 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
             metadata={
                 "episode_id": self._episode_id,
                 "step": self._current_step,
+                "passenger_messages": passenger_messages,
             },
         )
 

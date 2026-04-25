@@ -145,10 +145,17 @@ def build_dataset(env_factory, tokenizer, args, num_episodes: int):
     tasks = PHASE_TASKS[args.phase]
     for i in range(num_episodes):
         task = rng.choice(tasks)
+        row_seed = rng.randint(0, 1_000_000)
         env = env_factory()
-        obs = env.reset(task=task, seed=rng.randint(0, 1_000_000))
+        obs = env.reset(task=task, seed=row_seed)
         sys_prompt = SYSTEM_PROMPTS[task]
         user_lines = [obs.prompt_text]
+        passenger_messages = (obs.metadata or {}).get("passenger_messages") or []
+        if task == "ticket_booking" and passenger_messages:
+            user_lines.append("")
+            user_lines.append("Passenger follow-up messages, in order:")
+            for idx, message in enumerate(passenger_messages[1:], start=1):
+                user_lines.append(f"{idx}. Passenger: \"{message}\"")
         prompt_messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": "\n".join(user_lines)},
@@ -156,7 +163,7 @@ def build_dataset(env_factory, tokenizer, args, num_episodes: int):
         prompt_text = tokenizer.apply_chat_template(
             prompt_messages, tokenize=False, add_generation_prompt=True
         )
-        rows.append({"task": task, "prompt": prompt_text, "row_seed": rng.randint(0, 1_000_000)})
+        rows.append({"task": task, "prompt": prompt_text, "row_seed": row_seed})
     return Dataset.from_list(rows)
 
 
