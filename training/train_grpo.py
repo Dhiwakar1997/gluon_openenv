@@ -42,6 +42,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "MetroCrowdManager"))
 from training.rollout import (  # noqa: E402
     SYSTEM_PROMPTS,
     agentic_episode_sync,
+    format_training_debug_log,
+    replay_completion_sync,
 )
 
 
@@ -147,8 +149,6 @@ def build_dataset(env_factory, tokenizer, args, num_episodes: int):
         obs = env.reset(task=task, seed=rng.randint(0, 1_000_000))
         sys_prompt = SYSTEM_PROMPTS[task]
         user_lines = [obs.prompt_text]
-        if obs.passenger_message:
-            user_lines.append(f'Passenger: "{obs.passenger_message}"')
         prompt_messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": "\n".join(user_lines)},
@@ -168,43 +168,19 @@ def make_reward_fn(env_factory, tokenizer, args, log_csv):
     rollout against a fresh env: we re-extract tool calls from the
     completion and score the whole trace via the env.
     """
-    from training.rollout import _extract_call_result, parse_tool_calls
-    from openenv.core.env_server.mcp_types import CallToolAction
-    from MetroCrowdManager.models import SubmitResponseAction
-
     def _replay(task: str, completion_text: str, seed: int) -> Dict:
         env = env_factory()
-        env.reset(task=task, seed=seed)
-        # The completion already encodes tool calls inline — split it on
-        # the </tool_call> boundary, replay each, and treat trailing text
-        # (after the last tool call) as the final submission.
-        turn_history = []
-        idx = 0
-        text = completion_text
-        while True:
-            chunk_end = text.find("</tool_call>", idx)
-            if chunk_end < 0:
-                break
-            chunk = text[idx:chunk_end + len("</tool_call>")]
-            calls = parse_tool_calls(chunk)
-            turn_record = {"text": chunk, "tool_calls": []}
-            for c in calls:
-                obs = env.step(CallToolAction(tool_name=c["name"], arguments=c["arguments"]))
-                data, error = _extract_call_result(obs)
-                turn_record["tool_calls"].append({
-                    "name": c["name"],
-                    "arguments": c["arguments"],
-                    "result": data,
-                    "error": error,
-                })
-            turn_history.append(turn_record)
-            idx = chunk_end + len("</tool_call>")
-        final_text = text[idx:].strip()
-        turn_history.append({"text": final_text, "tool_calls": []})
-        out = env.step(
-            SubmitResponseAction(content=final_text, metadata={"turn_history": turn_history})
-        )
-        return {"reward": float(out.reward or 0.0), "breakdown": dict(out.reward_breakdown or {})}
+        try:
+            return replay_completion_sync(
+                env,
+                task,
+                completion_text,
+                seed=seed,
+            )
+        finally:
+            close = getattr(env, "close", None)
+            if callable(close):
+                close()
 
     csv_handle = None
     if log_csv:
@@ -219,19 +195,40 @@ def make_reward_fn(env_factory, tokenizer, args, log_csv):
         rewards: List[float] = []
         tasks = kwargs.get("task") or [None] * len(prompts)
         seeds = kwargs.get("row_seed") or [args.seed] * len(prompts)
-        for prompt, completion, task, seed in zip(prompts, completions, tasks, seeds):
+        for sample_idx, (prompt, completion, task, seed) in enumerate(
+            zip(prompts, completions, tasks, seeds),
+            start=1,
+        ):
             if isinstance(completion, list):
                 completion_text = completion[-1].get("content", "")
             else:
                 completion_text = completion
+            task_name = task or "ticket_issuance"
             try:
-                result = _replay(task or "ticket_issuance", completion_text, int(seed))
+                result = _replay(task_name, completion_text, int(seed))
                 r = result["reward"]
                 breakdown = result["breakdown"]
             except Exception as exc:  # pragma: no cover
                 r = 0.0
                 breakdown = {"error": 1.0}
                 print(f"[reward_fn] replay error: {exc}", flush=True)
+                result = {
+                    "reward": r,
+                    "breakdown": breakdown,
+                    "turn_history": [],
+                    "final_text": completion_text,
+                    "initial_observation": {},
+                    "debug_context": {},
+                }
+            print(
+                format_training_debug_log(
+                    step=step_counter["n"],
+                    sample_idx=sample_idx,
+                    task_name=task_name,
+                    replay_result=result,
+                ),
+                flush=True,
+            )
             if csv_handle:
                 csv_handle.write(
                     f"{step_counter['n']},{task},{r:.4f},{json.dumps(breakdown)}\n"

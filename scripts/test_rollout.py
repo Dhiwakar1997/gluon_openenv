@@ -110,7 +110,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("task", choices=["ticket_booking", "ticket_issuance", "crowd_announcement"])
     p.add_argument("--seed", type=int, default=1)
-    p.add_argument("--turns", type=int, default=10)
+    p.add_argument("--turns", type=int, default=8)
     p.add_argument("--temperature", type=float, default=0.3)
     p.add_argument(
         "--max-tokens",

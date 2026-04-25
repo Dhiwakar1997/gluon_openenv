@@ -97,6 +97,43 @@ def _final_text(turn_history: List[dict], fallback: str = "") -> str:
     return fallback
 
 
+_REDUNDANT_DESTINATION_PATTERNS = (
+    r"\bwhat(?:'s| is)? your destination\b",
+    r"\bwhere (?:are you going|would you like to go)\b",
+    r"\bwhich station\b",
+    r"\btell me where\b",
+    r"\b(?:tell me|confirm) (?:your )?destination\b",
+)
+
+
+def _asked_for_destination_again(turn_history: List[dict]) -> bool:
+    if not turn_history:
+        return False
+    first_text = (turn_history[0].get("text") or "").lower()
+    if not first_text.strip():
+        return False
+    return any(re.search(pattern, first_text) for pattern in _REDUNDANT_DESTINATION_PATTERNS)
+
+
+def has_malformed_tool_call(turn_history: List[dict]) -> bool:
+    """Detect raw tool-call markup that never formed a valid parsed call."""
+    for turn in turn_history:
+        text = turn.get("text", "") or ""
+        if "<tool_call" not in text:
+            continue
+        matches = _TOOL_CALL_RE.findall(text)
+        if "<tool_call>" in text and len(matches) == 0:
+            return True
+        for block in matches:
+            try:
+                payload = json.loads(block)
+            except json.JSONDecodeError:
+                return True
+            if not isinstance(payload, dict) or "name" not in payload:
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # 1. tool_sequence_reward
 # ---------------------------------------------------------------------------
@@ -183,6 +220,8 @@ def tool_fidelity_reward(turn_history: List[dict]) -> float:
             satisfied += 1
 
     if applicable == 0:
+        if has_malformed_tool_call(turn_history):
+            return 0.0
         return 0.5
     return satisfied / applicable
 
@@ -204,6 +243,8 @@ def tool_economy_reward(turn_history: List[dict], task_name: str) -> float:
     """
     calls = _all_tool_calls(turn_history)
     if not calls:
+        if has_malformed_tool_call(turn_history):
+            return 0.0
         return 1.0
     actual = len(calls)
     expected = EXPECTED_MIN_CALLS.get(task_name, actual)
@@ -320,6 +361,8 @@ def info_sufficiency_reward(turn_history: List[dict], scenario: Scenario) -> flo
         score += 1.0 / 3.0
     if premature_payment:
         score = max(0.0, score - 0.5)
+    if scenario.passenger_goal is not None and _asked_for_destination_again(turn_history):
+        score = max(0.0, score - 0.25)
     return max(0.0, min(1.0, score))
 
 
@@ -400,7 +443,254 @@ def payment_discipline_reward(turn_history: List[dict], scenario: Scenario) -> f
 
 
 # ---------------------------------------------------------------------------
-# 7. ticket_schema_validity (Task 2 only)
+# 7. task_success_reward (Task 1 only)
+# ---------------------------------------------------------------------------
+
+
+_COUNT_QUESTION_PATTERNS = (
+    r"\bhow many\b",
+    r"\bhow many (?:people|passengers|travellers|travelers|tickets)\b",
+    r"\bnumber of passengers\b",
+    r"\bpassenger count\b",
+    r"\bgroup size\b",
+)
+
+_FARE_MARKERS = (
+    "fare",
+    "cost",
+    "price",
+    "total",
+    "inr",
+    "rs.",
+    "rs ",
+    "rupees",
+    "ticket will be",
+)
+
+_BOOKING_MARKERS = (
+    "ticket",
+    "booking",
+    "booked",
+    "payment",
+    "confirmed",
+    "confirmation",
+)
+
+
+def task_success_reward(turn_history: List[dict], scenario: Scenario) -> float:
+    """End-to-end success score for a ticket-booking trajectory."""
+    goal = scenario.passenger_goal
+    if goal is None:
+        return 0.0
+
+    calls = _all_tool_calls(turn_history)
+    expected_cost = compute_ticket_cost(
+        scenario,
+        scenario.source_station,
+        goal.destination,
+        goal.passenger_count,
+    )
+
+    valid_destination = any(
+        call.get("name") == "validate_destination"
+        and (call.get("result") or {}).get("valid") is True
+        and _fuzzy_equal((call.get("result") or {}).get("normalized"), goal.destination)
+        for call in calls
+    )
+
+    correct_cost_lookup = any(
+        call.get("name") == "get_ticket_cost"
+        and _fuzzy_equal((call.get("arguments") or {}).get("source"), scenario.source_station)
+        and _fuzzy_equal((call.get("arguments") or {}).get("destination"), goal.destination)
+        and _num((call.get("arguments") or {}).get("passenger_count"), default=-1)
+        == goal.passenger_count
+        and abs(_num((call.get("result") or {}).get("cost"), default=-1) - expected_cost) < 0.5
+        for call in calls
+    )
+
+    payment_call = next(
+        (
+            call
+            for call in calls
+            if call.get("name") == "initiate_payment"
+            and abs(_num((call.get("arguments") or {}).get("amount"), default=-1) - expected_cost)
+            < 0.5
+            and _num((call.get("arguments") or {}).get("passenger_count"), default=-1)
+            == goal.passenger_count
+        ),
+        None,
+    )
+
+    payment_id = None
+    if payment_call is not None:
+        payment_id = (payment_call.get("result") or {}).get("payment_id")
+
+    terminal_status: Optional[str] = None
+    if payment_id is not None:
+        for call in reversed(calls):
+            if call.get("name") != "check_payment_status":
+                continue
+            if not _fuzzy_equal((call.get("arguments") or {}).get("payment_id"), payment_id):
+                continue
+            status = (call.get("result") or {}).get("status")
+            if status in {"success", "failed"}:
+                terminal_status = status
+                break
+
+    final_text = _final_text(turn_history).lower()
+    mentions_destination = goal.destination.lower() in final_text
+    mentions_booking = any(marker in final_text for marker in _BOOKING_MARKERS)
+    mentions_amount = (
+        "inr" in final_text
+        or "rupees" in final_text
+        or str(int(round(expected_cost))) in final_text
+    )
+
+    final_outcome = 0.0
+    if terminal_status == "success":
+        if any(marker in final_text for marker in _SUCCESS_COMM_MARKERS):
+            final_outcome = 0.6
+            if mentions_booking:
+                final_outcome += 0.2
+            if mentions_destination or mentions_amount:
+                final_outcome += 0.2
+    elif terminal_status == "failed":
+        has_failure = any(marker in final_text for marker in _FAILURE_COMM_MARKERS)
+        has_retry = any(marker in final_text for marker in _RETRY_MARKERS)
+        final_outcome = (0.5 if has_failure else 0.0) + (0.5 if has_retry else 0.0)
+
+    score = 0.0
+    if valid_destination:
+        score += 0.2
+    if correct_cost_lookup:
+        score += 0.2
+    if payment_call is not None:
+        score += 0.2
+    if terminal_status in {"success", "failed"}:
+        score += 0.2
+    score += 0.2 * final_outcome
+    return max(0.0, min(1.0, score))
+
+
+# ---------------------------------------------------------------------------
+# 8. conversation_quality_reward (Task 1 only)
+# ---------------------------------------------------------------------------
+
+
+def conversation_quality_reward(turn_history: List[dict], scenario: Scenario) -> float:
+    """Score whether the dialogue was useful, relevant, and orderly."""
+    if has_malformed_tool_call(turn_history) and not _all_tool_calls(turn_history):
+        return 0.0
+    texts = [
+        _strip_tool_blocks(turn.get("text", ""))
+        for turn in turn_history
+        if (turn.get("text") or "").strip()
+    ]
+    if not texts:
+        return 0.0
+
+    lower_texts = [text.lower() for text in texts]
+    calls = _all_tool_calls(turn_history)
+
+    count_question_turns = [
+        idx
+        for idx, text in enumerate(lower_texts)
+        if any(re.search(pattern, text) for pattern in _COUNT_QUESTION_PATTERNS)
+    ]
+    redundant_destination = any(
+        any(re.search(pattern, text) for pattern in _REDUNDANT_DESTINATION_PATTERNS)
+        for text in lower_texts
+    )
+    fare_explained = any(
+        any(marker in text for marker in _FARE_MARKERS) for text in lower_texts
+    )
+    final_text = _final_text(turn_history).lower()
+    final_useful = any(marker in final_text for marker in _BOOKING_MARKERS)
+
+    had_valid_destination = any(
+        call.get("name") == "validate_destination"
+        and (call.get("result") or {}).get("valid") is True
+        for call in calls
+    )
+    payment_idx = next(
+        (idx for idx, call in enumerate(calls) if call.get("name") == "initiate_payment"),
+        None,
+    )
+    count_before_payment = False
+    if payment_idx is None:
+        count_before_payment = bool(count_question_turns)
+    else:
+        seen_tool_calls = 0
+        for turn in turn_history:
+            text = _strip_tool_blocks(turn.get("text", "")).lower()
+            if any(re.search(pattern, text) for pattern in _COUNT_QUESTION_PATTERNS):
+                count_before_payment = True
+                break
+            seen_tool_calls += len(turn.get("tool_calls", []) or [])
+            if seen_tool_calls > payment_idx:
+                break
+
+    normalized_texts = [_normalize_turn_text(text) for text in texts]
+    repeated_turns = len(normalized_texts) - len({text for text in normalized_texts if text})
+
+    score = 0.0
+    if had_valid_destination and not redundant_destination:
+        score += 0.25
+    if count_before_payment:
+        score += 0.25
+    if fare_explained:
+        score += 0.20
+    if repeated_turns == 0 and len(count_question_turns) <= 1 and not redundant_destination:
+        score += 0.15
+    if final_useful:
+        score += 0.15
+
+    if payment_idx is not None and not count_before_payment:
+        score = max(0.0, score - 0.40)
+    if len(texts) > 8:
+        score = max(0.0, score - min(0.30, (len(texts) - 8) * 0.10))
+
+    return max(0.0, min(1.0, score))
+
+
+# ---------------------------------------------------------------------------
+# 9. turn_efficiency_reward (Task 1 only)
+# ---------------------------------------------------------------------------
+
+
+def turn_efficiency_reward(turn_history: List[dict], max_turns: int = 8) -> float:
+    """Reward concise ticket-booking episodes and penalize looping."""
+    if has_malformed_tool_call(turn_history) and not _all_tool_calls(turn_history):
+        return 0.0
+    assistant_turns = sum(
+        1 for turn in turn_history if (turn.get("text") or "").strip() or turn.get("tool_calls")
+    )
+    if assistant_turns <= 0:
+        return 0.0
+
+    if assistant_turns <= max_turns - 2:
+        score = 1.0
+    elif assistant_turns <= max_turns:
+        score = 0.8
+    elif assistant_turns <= max_turns + 2:
+        score = 0.5
+    elif assistant_turns <= max_turns + 4:
+        score = 0.2
+    else:
+        score = 0.0
+
+    normalized = [
+        _normalize_turn_text(_strip_tool_blocks(turn.get("text", "")))
+        for turn in turn_history
+        if (turn.get("text") or "").strip()
+    ]
+    repeated = len(normalized) - len({text for text in normalized if text})
+    score -= min(0.4, repeated * 0.15)
+    return max(0.0, min(1.0, score))
+
+
+# ---------------------------------------------------------------------------
+# 10. ticket_schema_validity (Task 2 only)
 # ---------------------------------------------------------------------------
 
 
@@ -477,6 +767,16 @@ def _fuzzy_equal(a: Any, b: Any) -> bool:
     except Exception:
         return False
     return sa == sb
+
+
+def _strip_tool_blocks(text: str) -> str:
+    return _TOOL_CALL_RE.sub("", text or "").strip()
+
+
+def _normalize_turn_text(text: str) -> str:
+    text = _strip_tool_blocks(text).lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return " ".join(text.split())
 
 
 def _extract_json(text: str) -> Optional[dict]:

@@ -68,6 +68,8 @@ class MetrocrowdmanagerEnv(
     def _parse_result(self, payload: Dict[str, Any]) -> StepResult[ClientObservation]:
         obs_data = payload.get("observation") or payload
         obs_type = obs_data.get("type") or _infer_observation_type(obs_data)
+        top_level_reward = payload.get("reward")
+        top_level_done = payload.get("done", False)
         observation: Observation
         if obs_type == "list_tools":
             tools = [
@@ -76,8 +78,8 @@ class MetrocrowdmanagerEnv(
             ]
             observation = ListToolsObservation(
                 tools=tools,
-                done=obs_data.get("done", False),
-                reward=obs_data.get("reward"),
+                done=obs_data.get("done", top_level_done),
+                reward=obs_data.get("reward", top_level_reward),
                 metadata=obs_data.get("metadata", {}),
             )
         elif obs_type == "call_tool":
@@ -91,8 +93,8 @@ class MetrocrowdmanagerEnv(
                 tool_name=obs_data.get("tool_name", ""),
                 result=obs_data.get("result"),
                 error=error,
-                done=obs_data.get("done", False),
-                reward=obs_data.get("reward"),
+                done=obs_data.get("done", top_level_done),
+                reward=obs_data.get("reward", top_level_reward),
                 metadata=obs_data.get("metadata", {}),
             )
         else:
@@ -104,13 +106,13 @@ class MetrocrowdmanagerEnv(
                 passenger_message=obs_data.get("passenger_message", ""),
                 scenario_summary=obs_data.get("scenario_summary", {}),
                 reward_breakdown=obs_data.get("reward_breakdown", {}),
-                done=obs_data.get("done", False),
-                reward=obs_data.get("reward"),
+                done=obs_data.get("done", top_level_done),
+                reward=obs_data.get("reward", top_level_reward),
                 metadata=obs_data.get("metadata", {}),
             )
         return StepResult(
             observation=observation,
-            reward=payload.get("reward") if "reward" in payload else observation.reward,
+            reward=top_level_reward if "reward" in payload else observation.reward,
             done=payload.get("done", observation.done),
         )
 

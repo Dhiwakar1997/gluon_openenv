@@ -38,13 +38,16 @@ except ImportError:
 try:
     from . import tools as tools_mod
     from .agentic_rewards import (
+        conversation_quality_reward,
         format_reward,
-        info_sufficiency_reward,
+        has_malformed_tool_call,
         payment_discipline_reward,
+        task_success_reward,
         ticket_schema_validity,
         tool_economy_reward,
         tool_fidelity_reward,
         tool_sequence_reward,
+        turn_efficiency_reward,
     )
     from .passenger_sim import PassengerSim
     from .rewards import (
@@ -64,13 +67,16 @@ try:
 except ImportError:  # pragma: no cover
     import tools as tools_mod
     from agentic_rewards import (
+        conversation_quality_reward,
         format_reward,
-        info_sufficiency_reward,
+        has_malformed_tool_call,
         payment_discipline_reward,
+        task_success_reward,
         ticket_schema_validity,
         tool_economy_reward,
         tool_fidelity_reward,
         tool_sequence_reward,
+        turn_efficiency_reward,
     )
     from passenger_sim import PassengerSim
     from rewards import (
@@ -378,20 +384,30 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
         fid = tool_fidelity_reward(turn_history)
         eco = tool_economy_reward(turn_history, "ticket_booking")
         fmt = format_reward(turn_history)
-        info = info_sufficiency_reward(turn_history, sc)
+        task_success = task_success_reward(turn_history, sc)
+        convo = conversation_quality_reward(turn_history, sc)
+        efficiency = turn_efficiency_reward(turn_history)
         pay = payment_discipline_reward(turn_history, sc)
-        polite = compute_politeness(content, [], [], 10)
-        clarity = compute_clarity(content, [], [], 10)
+        malformed = has_malformed_tool_call(turn_history)
+        final_has_tool_markup = "<tool_call" in (content or "")
+        if malformed or final_has_tool_markup:
+            polite = 0.0
+            clarity = 0.0
+        else:
+            polite = compute_politeness(content, [], [], 10)
+            clarity = compute_clarity(content, [], [], 10)
 
         return {
-            "tool_sequence":       0.20 * seq,
-            "tool_fidelity":       0.15 * fid,
-            "tool_economy":        0.10 * eco,
-            "format":              0.10 * fmt,
-            "info_sufficiency":    0.20 * info,
-            "payment_discipline":  0.15 * pay,
-            "politeness":          0.05 * polite,
-            "clarity":             0.05 * clarity,
+            "task_success":        0.30 * task_success,
+            "tool_sequence":       0.10 * seq,
+            "tool_fidelity":       0.10 * fid,
+            "tool_economy":        0.03 * eco,
+            "format":              0.02 * fmt,
+            "conversation_quality": 0.20 * convo,
+            "turn_efficiency":     0.10 * efficiency,
+            "payment_discipline":  0.10 * pay,
+            "politeness":          0.03 * polite,
+            "clarity":             0.02 * clarity,
         }
 
     def _reward_ticket_issuance(
@@ -526,9 +542,9 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
             [
                 f"You are a metro station ticket agent at {sc.source_station}.",
                 "A passenger has approached you. Your job is to:",
-                "  1. Find out where they are going.",
-                "  2. Confirm the destination is valid.",
-                "  3. Find out how many passengers are travelling.",
+                "  1. Read the passenger's request carefully and extract any details already provided.",
+                "  2. If the destination is already stated, do not ask for it again.",
+                "  3. Confirm the destination is valid and ask only for missing details.",
                 "  4. Quote the fare clearly.",
                 "  5. Initiate the payment and poll until it resolves.",
                 "  6. Communicate the outcome and any next step to the passenger.",

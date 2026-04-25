@@ -2,8 +2,8 @@
 Scripted passenger state machine for Task 1 (ticket_booking).
 
 The passenger follows a deterministic state progression:
-    awaiting_destination
-        └─ agent asks → passenger reveals destination
+    opening utterance
+        └─ immediately reveals destination
     awaiting_count
         └─ agent asks about passenger count → passenger reveals count
     awaiting_cost_confirmation
@@ -131,10 +131,11 @@ _PAYMENT_RESULT_KEYWORDS = (
 @dataclass
 class PassengerSim:
     goal: PassengerGoal
-    state: str = "awaiting_destination"
+    state: str = "awaiting_count"
     last_utterance: str = ""
     rng_seed: int = 0
     turns_in_state: int = 0
+    opening_utterance: str = ""
     template_choice: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -146,7 +147,10 @@ class PassengerSim:
             "ack_success": rng.choice(PAYMENT_ACK_SUCCESS),
             "ack_failure": rng.choice(PAYMENT_ACK_FAILURE),
         }
-        self.last_utterance = self._speak_current()
+        self.opening_utterance = self.template_choice["dest"].format(
+            dest=self.goal.destination
+        )
+        self.last_utterance = self.opening_utterance
 
     def _speak_current(self) -> str:
         if self.state == "awaiting_destination":
@@ -161,7 +165,7 @@ class PassengerSim:
 
     def opening_line(self) -> str:
         """First utterance the agent sees at the start of the episode."""
-        return self.template_choice["dest"].format(dest=self.goal.destination)
+        return self.opening_utterance
 
     def advance(self, agent_text: str, payment_outcome: Optional[str] = None) -> str:
         """Advance the state machine given the agent's latest turn.

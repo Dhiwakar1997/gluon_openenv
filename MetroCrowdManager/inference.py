@@ -54,7 +54,7 @@ BENCHMARK = "MetroCrowdManager"
 
 TASKS = ["ticket_booking", "ticket_issuance", "crowd_announcement"]
 MAX_TURNS_PER_STEP: Dict[str, int] = {
-    "ticket_booking": 12,
+    "ticket_booking": 8,
     "ticket_issuance": 8,
     "crowd_announcement": 8,
 }
