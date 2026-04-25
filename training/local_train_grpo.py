@@ -35,16 +35,23 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+# Silence TRL's experimental-API warning emitted when `rollout_func` is
+# passed to GRPOTrainer (grpo_trainer.py line 441). Must be set BEFORE
+# importing trl (done lazily below in main()).
+os.environ.setdefault("TRL_EXPERIMENTAL_SILENCE", "1")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "MetroCrowdManager"))
 
+from training.agentic_rollout_func import make_agentic_rollout_func  # noqa: E402
 from training.rollout import (  # noqa: E402
     SYSTEM_PROMPTS,
     format_training_debug_log,
-    replay_completion_sync,
+    make_replay_result_from_rollout,
+    replay_completion_sync,  # kept for compat / inspection; no longer called
 )
 
 
@@ -86,7 +93,7 @@ def parse_args() -> argparse.Namespace:
                    choices=["auto", "cuda", "mps", "cpu"])
     p.add_argument("--num-episodes", type=int, default=20)
     p.add_argument("--max-turns", type=int, default=8)
-    p.add_argument("--max-seq-len", type=int, default=1536)
+    p.add_argument("--max-seq-len", type=int, default=2048)
     p.add_argument("--max-completion-len", type=int, default=256)
     p.add_argument("--batch-size", type=int, default=2)
     p.add_argument("--grad-accum", type=int, default=2)
@@ -146,7 +153,14 @@ def build_model_and_tokenizer(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.model_max_length = args.max_seq_len - args.max_completion_len
+    # Qwen2.5 ships with model_max_length=1024 in tokenizer_config; force it
+    # to (at least) the model's real context window so prompts aren't
+    # silently truncated to 1024 tokens before the trainer ever sees them.
+    tokenizer.model_max_length = max(args.max_seq_len, 4096)
+    if getattr(tokenizer, "truncation_side", None) != "left":
+        # Left-truncate so a too-long prompt drops boilerplate from the
+        # system message rather than the user's question at the tail.
+        tokenizer.truncation_side = "left"
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
@@ -283,21 +297,19 @@ def stop_docker_env(env) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Reward fn — replay completion's tool calls against the container
+# Reward fn — pass-through over rollout_func outputs
+#
+# The multi-turn rollout (training/agentic_rollout_func.py) already
+# executed every tool call against the container and submitted the final
+# answer to the env, capturing the reward + breakdown there. The reward
+# function below just unpacks those per-sample values from the trainer's
+# extra_fields kwargs and emits the debug log / CSV / trackio metrics.
 # ---------------------------------------------------------------------------
 
 
-def make_docker_reward_fn(env, args, log_csv: str, trackio_enabled: bool):
+def make_docker_reward_fn(args, log_csv: str, trackio_enabled: bool):
     if trackio_enabled:
         import trackio  # noqa: F401  (imported lazily inside log block)
-
-    def _replay(task: str, completion_text: str, seed: int) -> Dict:
-        return replay_completion_sync(
-            env,
-            task,
-            completion_text,
-            seed=seed,
-        )
 
     csv_handle = None
     if log_csv:
@@ -308,57 +320,77 @@ def make_docker_reward_fn(env, args, log_csv: str, trackio_enabled: bool):
 
     step_counter = {"n": 0}
 
+    def _per_sample(kwargs: Dict[str, Any], idx: int, key: str, default: Any) -> Any:
+        values = kwargs.get(key)
+        if not values:
+            return default
+        if idx >= len(values):
+            return default
+        return values[idx]
+
     def reward_fn(prompts, completions, **kwargs):
         rewards: List[float] = []
         per_task: Dict[str, List[float]] = {}
         agg_breakdown: Dict[str, List[float]] = {}
 
-        tasks = kwargs.get("task") or [None] * len(prompts)
-        seeds = kwargs.get("row_seed") or [args.seed] * len(prompts)
-        for sample_idx, (prompt, completion, task, seed) in enumerate(
-            zip(prompts, completions, tasks, seeds),
-            start=1,
+        for sample_idx, (prompt, completion) in enumerate(
+            zip(prompts, completions), start=1
         ):
-            if isinstance(completion, list):
-                completion_text = completion[-1].get("content", "")
-            else:
-                completion_text = completion
-            task_name = task or "ticket_issuance"
-            try:
-                result = _replay(task_name, completion_text, int(seed))
-                r = result["reward"]
-                breakdown = result["breakdown"]
-            except Exception as exc:  # pragma: no cover
-                r = 0.0
-                breakdown = {"error": 1.0}
-                print(f"[reward_fn] replay error: {exc}", flush=True)
-                result = {
-                    "reward": r,
-                    "breakdown": breakdown,
-                    "turn_history": [],
-                    "final_text": completion_text,
-                    "initial_observation": {},
-                    "debug_context": {},
-                }
+            task_name = _per_sample(kwargs, sample_idx - 1, "rollout_task_name", None) \
+                or _per_sample(kwargs, sample_idx - 1, "task", None) \
+                or "ticket_issuance"
+
+            r = float(_per_sample(kwargs, sample_idx - 1, "rollout_reward", 0.0) or 0.0)
+            breakdown = dict(
+                _per_sample(kwargs, sample_idx - 1, "rollout_breakdown", {}) or {}
+            )
+            turn_history = list(
+                _per_sample(kwargs, sample_idx - 1, "rollout_turn_history", []) or []
+            )
+            final_text = str(
+                _per_sample(kwargs, sample_idx - 1, "rollout_final_text", "") or ""
+            )
+            raw_completion = str(
+                _per_sample(kwargs, sample_idx - 1, "rollout_raw_completion", "") or ""
+            )
+            initial_obs = dict(
+                _per_sample(kwargs, sample_idx - 1, "rollout_initial_obs", {}) or {}
+            )
+            system_prompt = str(
+                _per_sample(kwargs, sample_idx - 1, "rollout_system_prompt", "") or ""
+            )
+
+            replay_result = make_replay_result_from_rollout(
+                turn_history=turn_history,
+                final_text=final_text,
+                reward=r,
+                breakdown=breakdown,
+                initial_observation=initial_obs,
+                raw_completion=raw_completion,
+                system_prompt=system_prompt,
+            )
 
             print(
                 format_training_debug_log(
                     step=step_counter["n"],
                     sample_idx=sample_idx,
                     task_name=task_name,
-                    replay_result=result,
+                    replay_result=replay_result,
                 ),
                 flush=True,
             )
 
             if csv_handle:
                 csv_handle.write(
-                    f"{step_counter['n']},{task},{r:.4f},{json.dumps(breakdown)}\n"
+                    f"{step_counter['n']},{task_name},{r:.4f},{json.dumps(breakdown)}\n"
                 )
             rewards.append(r)
-            per_task.setdefault(task or "unknown", []).append(r)
+            per_task.setdefault(task_name, []).append(r)
             for k, v in breakdown.items():
-                agg_breakdown.setdefault(k, []).append(float(v))
+                try:
+                    agg_breakdown.setdefault(k, []).append(float(v))
+                except (TypeError, ValueError):
+                    pass
 
         if trackio_enabled:
             log_payload: Dict[str, float] = {
@@ -419,10 +451,29 @@ def main() -> None:
     dataset = build_dataset(tokenizer, args, args.num_episodes)
     print(f"[local-train] dataset rows: {len(dataset)}")
 
+    # Per-prompt-text lookup so rollout_func (which only sees the prompt
+    # strings) can recover the dataset's `task` and `row_seed` columns.
+    # Each row has a unique prompt because it embeds the random scenario.
+    prompt_to_meta: Dict[str, Tuple[str, int]] = {
+        row["prompt"]: (row["task"], int(row["row_seed"])) for row in dataset
+    }
+
+    def task_resolver(_idx: int, prompt_text: str) -> str:
+        return prompt_to_meta.get(prompt_text, (PHASE_TASKS[args.phase][0], args.seed))[0]
+
+    def seed_resolver(_idx: int, prompt_text: str) -> Optional[int]:
+        return prompt_to_meta.get(prompt_text, (PHASE_TASKS[args.phase][0], args.seed))[1]
+
     log_csv = args.log_csv or str(Path(args.output_dir) / "rewards.csv")
 
     env = start_docker_env(args.image, open_log_terminal=args.open_log_terminal)
-    reward_fn = make_docker_reward_fn(env, args, log_csv, trackio_enabled)
+    reward_fn = make_docker_reward_fn(args, log_csv, trackio_enabled)
+    rollout_func = make_agentic_rollout_func(
+        env,
+        task_resolver=task_resolver,
+        seed_resolver=seed_resolver,
+        max_completion_len=args.max_completion_len,
+    )
 
     try:
         from trl import GRPOConfig, GRPOTrainer
@@ -458,6 +509,7 @@ def main() -> None:
             args=training_args,
             train_dataset=dataset,
             reward_funcs=[reward_fn],
+            rollout_func=rollout_func,
         )
 
         t0 = time.time()

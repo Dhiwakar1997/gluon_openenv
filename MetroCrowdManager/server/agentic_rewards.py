@@ -89,6 +89,12 @@ def _all_tool_calls(turn_history: List[dict]) -> List[dict]:
     return calls
 
 
+def count_valid_tool_calls(turn_history: List[dict]) -> int:
+    """Number of parsed tool calls with a non-empty `name`. Used by the
+    env to decide whether the agent did *any* real tool use this episode."""
+    return sum(1 for c in _all_tool_calls(turn_history) if c.get("name"))
+
+
 def _final_text(turn_history: List[dict], fallback: str = "") -> str:
     for turn in reversed(turn_history):
         text = turn.get("text") or ""
@@ -167,7 +173,7 @@ def tool_sequence_reward(turn_history: List[dict], task_name: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def tool_fidelity_reward(turn_history: List[dict]) -> float:
+def tool_fidelity_reward(turn_history: List[dict], task_name: Optional[str] = None) -> float:
     """Reward using real tool outputs in downstream tool call arguments.
 
     Specifically checks for each "upstream → downstream" link below:
@@ -222,6 +228,14 @@ def tool_fidelity_reward(turn_history: List[dict]) -> float:
     if applicable == 0:
         if has_malformed_tool_call(turn_history):
             return 0.0
+        # No applicable upstream→downstream link means the agent didn't
+        # invoke a chained pair. For tasks where the EXPECTED sequence
+        # demands tool use, returning 0.5 hands free reward to a model
+        # that submitted nothing — collapse to 0.0 instead.
+        if task_name and EXPECTED_SEQUENCE.get(task_name):
+            calls = _all_tool_calls(turn_history)
+            if not calls:
+                return 0.0
         return 0.5
     return satisfied / applicable
 
@@ -244,6 +258,11 @@ def tool_economy_reward(turn_history: List[dict], task_name: str) -> float:
     calls = _all_tool_calls(turn_history)
     if not calls:
         if has_malformed_tool_call(turn_history):
+            return 0.0
+        # If the task has an expected minimum tool count, zero calls is a
+        # failure mode, not "polite economy". Returning 1.0 here let
+        # ticket_issuance models earn 0.10 for emitting an empty answer.
+        if EXPECTED_MIN_CALLS.get(task_name, 0) > 0:
             return 0.0
         return 1.0
     actual = len(calls)
