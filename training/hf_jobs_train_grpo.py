@@ -498,6 +498,49 @@ def main() -> None:
             trainer.model.push_to_hub(args.push_to_hub_id, token=hf_token)
             tokenizer.push_to_hub(args.push_to_hub_id, token=hf_token)
             print(f"[hf-jobs-train] push complete.")
+
+            # Upload metrics artifacts so the Colab notebook can fetch them
+            # after the job ends (trainer pushes only weights by default).
+            try:
+                from huggingface_hub import HfApi, upload_file
+
+                api = HfApi(token=hf_token)
+                api.create_repo(args.push_to_hub_id, exist_ok=True, token=hf_token)
+
+                # Per-step reward CSV written by `make_remote_reward_fn`.
+                if Path(log_csv).exists():
+                    upload_file(
+                        path_or_fileobj=log_csv,
+                        path_in_repo=f"metrics/{args.phase}/rewards.csv",
+                        repo_id=args.push_to_hub_id,
+                        repo_type="model",
+                        token=hf_token,
+                        commit_message=f"Add rewards.csv for {run_name}",
+                    )
+                    print(f"[hf-jobs-train] uploaded {log_csv} -> "
+                          f"{args.push_to_hub_id}:metrics/{args.phase}/rewards.csv")
+
+                # Dump trainer.log_history as a JSON sidecar so the notebook
+                # can plot loss curves without re-fetching trackio events.
+                log_history_path = Path(args.output_dir) / "log_history.json"
+                try:
+                    with open(log_history_path, "w") as f:
+                        json.dump(trainer.state.log_history, f)
+                    upload_file(
+                        path_or_fileobj=str(log_history_path),
+                        path_in_repo=f"metrics/{args.phase}/log_history.json",
+                        repo_id=args.push_to_hub_id,
+                        repo_type="model",
+                        token=hf_token,
+                        commit_message=f"Add trainer log_history for {run_name}",
+                    )
+                    print(f"[hf-jobs-train] uploaded {log_history_path} -> "
+                          f"{args.push_to_hub_id}:metrics/{args.phase}/log_history.json")
+                except Exception as exc_inner:  # pragma: no cover
+                    print(f"[hf-jobs-train] log_history upload skipped: {exc_inner}",
+                          flush=True)
+            except Exception as exc:  # pragma: no cover
+                print(f"[hf-jobs-train] metrics upload failed: {exc}", flush=True)
     finally:
         stop_remote_env(env)
         if trackio_enabled:

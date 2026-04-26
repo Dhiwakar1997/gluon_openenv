@@ -1,0 +1,5 @@
+# This directory holds reward + loss PNGs rendered by the Colab notebook
+# (notebooks/train_on_hf_jobs.ipynb) at the end of each HF Jobs A100 run.
+#
+# Files committed here always come from the LAST training run in the Colab
+# notebook — never from a local fallback script.

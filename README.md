@@ -1,203 +1,259 @@
----
-title: MetroCrowdManager Environment Server
-emoji: 🚇
-colorFrom: blue
-colorTo: green
-sdk: docker
-pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
+# MetroCrowdManager — Agentic MCP Environment for OpenEnv
+
+> Hackathon submission for the OpenEnv RL Hackathon. An agentic, tool-use
+> heavy environment in which an LLM plays a metro-station assistant —
+> conversing with passengers, looking up live platform/crowd state, running
+> payment loops, and producing crowd redirection announcements — entirely
+> through MCP tool calls.
+
+[![Hugging Face Space](https://img.shields.io/badge/HF%20Space-MetroCrowdManager-FF6F00?logo=huggingface)](https://huggingface.co/spaces/DhiwakarDev/openenv)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb)
+[![Trackio dashboard](https://img.shields.io/badge/Trackio-mcm--trackio-FF6F00?logo=huggingface)](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio)
+[![GitHub](https://img.shields.io/badge/GitHub-Dhiwakar1997%2Fgluon__openenv-181717?logo=github)](https://github.com/Dhiwakar1997/gluon_openenv)
+
 ---
 
-# MetroCrowdManager Environment
+## TL;DR for judges
 
-A metro station crowd management RL environment built on the OpenEnv framework.
-An AI agent receives real-time train coach occupancy and platform zone crowd
-percentages, then produces polite, structured redirection announcements with
-color-coded crowd indicators.
+| Hackathon requirement | Where to find it |
+|---|---|
+| Built on **OpenEnv** (latest) | [`MetroCrowdManager/server/MetroCrowdManager_environment.py`](MetroCrowdManager/server/MetroCrowdManager_environment.py) — subclasses `openenv.core.env_server.mcp_environment.MCPEnvironment` |
+| RL framework | **Hugging Face TRL** (GRPO) — [`training/hf_jobs_train_grpo.py`](training/hf_jobs_train_grpo.py) |
+| **Colab notebook** judges can re-run | [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb) — submits the run to HF Jobs A100, tails logs, embeds the live trackio dashboard, plots loss + reward inline |
+| Loss + reward plots from a real run | [`docs/plots/`](docs/plots/) (see [Results](#results)) + live on the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) |
+| HF Space (env discoverable + runnable) | <https://huggingface.co/spaces/DhiwakarDev/openenv> |
+| Mini-blog or <2 min video | _Coming soon_ — see [Mini-blog / video](#mini-blog--video) |
+| Experimental tracking turned on | Yes — every run logs to the [Trackio Space](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) via TRL's `TrackioCallback` |
+
+---
 
 ## Motivation
 
-In real metro systems, passengers cluster near platform entrances and have no
-visibility into which coaches or zones are less crowded. This environment trains
-and evaluates agents that can produce clear, mathematically sound, polite
-crowd-redirection instructions — a genuine real-world task with immediate
-practical value.
+Metro stations are one of the most concrete real-world settings where small
+amounts of guidance produce huge throughput wins: passengers cluster near
+platform entrances, train coaches load unevenly, and a single coherent
+announcement can reshape boarding patterns within seconds. Existing announcement
+systems are static; they don't see live crowd state and can't distinguish
+"comfortable" from "crisis-level".
 
-## Quick Start
+**MetroCrowdManager** turns that into an agentic RL setting. The agent doesn't
+get a textbook problem statement — it gets the same affordances a human station
+master has: a passenger walks up and asks something, MCP tools to look up
+platform numbers / fares / crowd levels, a payment system to drive, and a
+ticking clock. Every reward dimension is grounded in real tool outputs, not
+hallucinated text, so the only way to climb the reward curve is to actually
+**use the tools correctly in the right order**.
 
-```python
-from MetroCrowdManager import MetrocrowdmanagerAction, MetrocrowdmanagerEnv
-
-async with MetrocrowdmanagerEnv(base_url="http://localhost:8000") as env:
-    result = await env.reset(task="redirection")
-
-    result = await env.step(MetrocrowdmanagerAction(
-        response_text='Announcement: "Dear passengers, please ..."\n'
-                       'Recommended Platform Distribution: [50, 55, 60, 45, 40, 50]\n'
-                       'Platform Zone Color Codes: [#FFFF00, #FFFF00, #FF8C00, #FFFF00, #008000, #FFFF00]\n'
-                       'Train Coach Color Codes: [#FF8C00, #FF0000, #FF0000, #FF8C00, #FFFF00, #FF8C00]'
-    ))
-
+```mermaid
+flowchart LR
+    Agent[LLM Agent] -->|"&lt;tool_call&gt;"| MCP[MCP Server<br/>11 tools]
+    MCP -->|"tool result"| Agent
+    Agent -->|final answer| Submit[SubmitResponseAction]
+    Submit -->|reward + breakdown| Trainer[GRPO Trainer]
+    Trainer -->|policy update| Agent
+    Trainer -->|metrics| Trackio[Trackio Space]
 ```
 
-## Action Space
+---
 
-**MetrocrowdmanagerAction** — a single field:
+## What's in the env
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `response_text` | `str` | Structured text containing announcement, recommended distribution, and color codes |
+Three tasks share the same simulated metro network and the same 11 MCP tools.
 
-### Structured Output Format
+| Task | Difficulty | Episode shape | What the agent must do |
+|------|------------|---------------|------------------------|
+| `ticket_booking` | hard | multi-turn dialogue | Converse with a scripted passenger, validate destination, quote fare, run the payment polling loop, communicate the outcome |
+| `ticket_issuance` | medium | single-turn | Use tools to gather platform + crowd intel, then emit a structured JSON ticket with the ideal boarding zone |
+| `crowd_announcement` | hard | 3–4 train arrivals | Each arrival: fetch crowd state via tools and produce a redirection announcement |
 
-For the full format (medium & hard tasks):
+The tool catalog and reward breakdowns are documented in detail in
+[`MetroCrowdManager/README.md`](MetroCrowdManager/README.md). Highlights:
 
+- **11 MCP tools** (FastMCP under the hood) for station info, fare quoting,
+  payment, crowd lookup, ideal-zone recommendation.
+- **3 task-specific reward functions** combining 10 orchestration rewards
+  ([`MetroCrowdManager/server/agentic_rewards.py`](MetroCrowdManager/server/agentic_rewards.py))
+  with 11 text/crowd-accuracy rewards
+  ([`MetroCrowdManager/server/rewards.py`](MetroCrowdManager/server/rewards.py)).
+- **Anti-gaming guards**: zero-tool-call floor on `ticket_issuance`, malformed
+  `<tool_call>` tag detection, premature-payment penalties.
+
+---
+
+## Architecture of the training run
+
+```mermaid
+flowchart LR
+    Judge[Judge / User] -->|opens| Colab[Colab Notebook<br/>notebooks/train_on_hf_jobs.ipynb]
+    Colab -->|notebook_login| HF[HF Hub auth]
+    Colab -->|hf jobs run| Jobs[HF Jobs A100-80GB<br/>Gemma-3-27B + QLoRA + GRPO]
+    Jobs -->|HTTP| Space[OpenEnv Space<br/>dhiwakardev-openenv.hf.space]
+    Jobs -->|streams metrics| Trackio[Trackio Space<br/>DhiwakarDev/mcm-trackio]
+    Jobs -->|pushes adapters + rewards.csv| Hub[HF Hub repo<br/>DhiwakarDev/mcm-gemma3-27b-grpo-PHASE]
+    Colab -->|tails| JobsLogs[Job logs in cell output]
+    Colab -->|IFrame embed| Trackio
+    Colab -->|hf hub download| Hub
+    Colab -->|matplotlib| Plots[loss + reward PNGs<br/>docs/plots/]
 ```
-Announcement: "<crowd redirection announcement>"
 
-Recommended Platform Distribution: [<target % for Zone A>, ..., <target % for Zone F>]
+The training loop is real GRPO with TRL: vLLM-free rollout via the agentic
+loop in [`training/agentic_rollout_func.py`](training/agentic_rollout_func.py),
+4-bit QLoRA on `google/gemma-3-27b-it`, and a custom remote reward function in
+[`training/hf_jobs_train_grpo.py`](training/hf_jobs_train_grpo.py) that
+re-submits each completion to the live OpenEnv Space and reads back the
+per-task reward breakdown.
 
-Platform Zone Color Codes: [<hex for Zone A>, ..., <hex for Zone F>]
+---
 
-Train Coach Color Codes: [<hex for Coach A>, ..., <hex for Coach F>]
-```
+## Reproduce
 
-For the easy task (crowd_assessment), only the two color code lines are required.
+### Option A — Re-run the training in Colab (recommended for judges)
 
-### Color Code Reference
+1. Open the notebook: [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb)
+   ([Open in Colab](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb)).
+2. Run the **Setup** + **Auth** cells (calls `notebook_login()`). You need
+   an `HF_TOKEN` with `write` scope.
+3. Pick the phase (`ticket_booking` / `ticket_issuance` / `crowd_announcement`),
+   model, step count, and HF Jobs flavor in the **Parameters** cell.
+4. Hit **Run All**. The notebook will:
+   - submit the job via `hf jobs run` (A100-80GB, ~$),
+   - tail the live logs into the cell output,
+   - embed the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) iframe,
+   - at end-of-run download `rewards.csv` from the Hub repo and render loss + reward PNGs inline.
 
-| Hex Code | Color | Crowd Level |
-|----------|-------|-------------|
-| `#008000` | Green | Comfortable (<=40%) |
-| `#FFFF00` | Yellow | Moderate (40-60%) |
-| `#FF8C00` | Orange | Crowded (60-80%) |
-| `#FF0000` | Red | Severely overcrowded (>80%) |
+> Don't have HF Jobs billing? The saved cell outputs in the committed `.ipynb`
+> show all of the above for the most recent production run; you can also click
+> straight through to the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio).
 
-## Observation Space
-
-**MetrocrowdmanagerObservation**:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `num_coaches` | `int` | Number of coaches/zones (always 6) |
-| `train_crowd` | `List[int]` | Coach occupancy percentages (0-100) |
-| `platform_crowd` | `List[int]` | Platform zone crowd percentages (0-100) |
-| `prompt_text` | `str` | Human-readable prompt with format instructions |
-| `current_step` | `int` | Current step (1-indexed) |
-| `max_steps` | `int` | Total steps in the episode |
-| `station_name` | `str` | Name of the station |
-| `task_name` | `str` | Active task name |
-| `done` | `bool` | Whether the episode has ended |
-| `reward` | `float` | Reward from the last action |
-
-## Tasks
-
-### Task 1: Crowd Assessment (Easy)
-
-**Objective**: Map crowd percentages to correct hex color codes.
-
-- **Steps**: 1
-- **Tests**: Basic perception — read percentages, apply thresholds, output hex codes
-- **Scoring**: `0.50 * color_grading + 0.25 * language_consistency + 0.25 * clarity`
-
-### Task 2: Redirection Announcement (Medium)
-
-**Objective**: Produce a complete redirection response with polite announcement,
-recommended platform distribution, and color codes.
-
-- **Steps**: 1
-- **Tests**: Math reasoning, language generation, structured formatting, color grading, sequential ordering, no-op detection
-- **Scoring**: Equal weight across all 7 reward dimensions
-- **Edge case**: 15% chance of balanced scenario requiring no-op response
-
-### Task 3: Multi-Train Crowd Management (Hard)
-
-**Objective**: Manage crowd across 8 consecutive train arrivals as platform crowd
-evolves with crisis surges, event crowds, and varying train patterns.
-
-- **Steps**: 8
-- **Tests**: All medium-task abilities plus temporal adaptation, crisis handling, and consistency
-- **Scoring**: All 7 dimensions scored per step, later steps weighted higher
-- **Edge case**: 15% chance of balanced steps amidst chaos
-
-## Reward Dimensions
-
-All 7 rewards are rule-based heuristics returning `[0.0, 1.0]`:
-
-| Reward | What it measures |
-|--------|-----------------|
-| `politeness` | Polite language markers, absence of aggressive language |
-| `math_accuracy` | Proposed redistribution vs capacity-weighted ideal (MAE) |
-| `color_grading` | Correct hex colors for platform zones + train coaches |
-| `language_consistency` | English-only output (no non-Latin characters or foreign words) |
-| `noop_detection` | Correctly identifies balanced scenarios (no unnecessary movement) |
-| `clarity` | Short sentences, no jargon, structured formatting |
-| `sequential_direction` | Coach-by-coach ordering (not simultaneous directives) |
-
-## Setup & Usage
-
-### Run Locally
+### Option B — Run the env locally and try inference
 
 ```bash
 cd MetroCrowdManager
 uv sync
-uv run server
-```
+uv run server                       # FastAPI on http://localhost:8000
 
-Server starts at `http://localhost:8000`.
-
-### Docker
-
-```bash
-# From MetroCrowdManager directory
-docker build -t metrocrowdmanager:latest .
-docker run -p 8000:8000 metrocrowdmanager:latest
-```
-
-### Run Inference
-
-```bash
+# in another shell
 export HF_TOKEN="your-token"
 export API_BASE_URL="https://router.huggingface.co/v1"
-export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-cd MetroCrowdManager
+export MODEL_NAME="Qwen/Qwen3-1.7B-Instruct"
 python inference.py
 ```
 
-### Deploy to Hugging Face Spaces
+### Option C — Submit the HF Jobs run from the CLI (no Colab)
 
 ```bash
-openenv push
+export HF_TOKEN="your-token"
+bash scripts/full_run_hf_job.sh ticket_issuance
+# or for all three tasks sequentially:
+bash scripts/full_run_hf_job.sh ALL
 ```
 
-## Baseline Scores
+See [`scripts/full_run_hf_job.sh`](scripts/full_run_hf_job.sh) for tunable
+defaults (model, steps, batch, flavor, timeout).
 
-*Scores will be populated after running inference with the baseline model.*
+### Option D — Update the public HF Space (env repo + README)
 
-| Task | Model | Avg Reward |
-|------|-------|------------|
-| crowd_assessment | Qwen2.5-72B-Instruct | TBD |
-| redirection | Qwen2.5-72B-Instruct | TBD |
-| multi_train | Qwen2.5-72B-Instruct | TBD |
+The Space is built and uploaded by `openenv push`. If the README on the Space
+looks stale (Spaces caches the file on their side), re-run the helper:
 
-## Project Structure
+```bash
+export HF_TOKEN="your-token"
+bash scripts/push_env_to_hf_space.sh
+# Or force-overwrite just the README:
+FORCE_README=1 bash scripts/push_env_to_hf_space.sh
+```
+
+The script is a thin wrapper around `openenv push` ([`scripts/push_env_to_hf_space.sh`](scripts/push_env_to_hf_space.sh))
+that also offers a `huggingface-cli` fallback to overwrite the Space's
+`README.md` directly when needed.
+
+---
+
+## Results
+
+Real GRPO run on Hugging Face Jobs A100-80GB. Live, always-current metrics:
+[**Trackio dashboard**](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio).
+
+### Reward + loss curves (from the latest Colab run)
+
+The PNGs below are written into [`docs/plots/`](docs/plots/) by the **final
+plotting cells of [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb)**
+— they only ever reflect the **most recent training run** launched from that
+notebook. There is no local-CSV fallback or staged "baseline" plot; if these
+images look out of date, run the notebook end-to-end and commit the new PNGs.
+
+![Episode reward (per task)](docs/plots/reward_curve.png)
+
+![Training loss](docs/plots/loss_curve.png)
+
+![Per-component reward breakdown](docs/plots/reward_breakdown.png)
+
+> If GitHub renders these as broken images, no run has been committed yet —
+> open the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio)
+> for the live numbers, then re-run the notebook to regenerate the PNGs.
+
+### Scores from the latest run
+
+The notebook prints the final-step mean reward per task; commit those into
+the table below after each run so the README stays in sync with the plots.
+
+| Task | Model | Mean reward (final step) |
+|------|-------|--------------------------|
+| `ticket_booking` | Gemma-3-27B + LoRA | _filled from latest Colab run_ |
+| `ticket_issuance` | Gemma-3-27B + LoRA | _filled from latest Colab run_ |
+| `crowd_announcement` | Gemma-3-27B + LoRA | _filled from latest Colab run_ |
+
+Adapter weights and the run's `rewards.csv` + `log_history.json` are pushed to
+[`DhiwakarDev/mcm-gemma3-27b-grpo-<phase>`](https://huggingface.co/DhiwakarDev)
+at end-of-training.
+
+---
+
+## Mini-blog / video
+
+> **Coming soon.** A short mini-blog on Hugging Face explaining the env
+> design, the reward shaping decisions, and the GRPO results will be linked
+> here. Optional <2 min YouTube walkthrough will be linked alongside.
+>
+> - Mini-blog: _TBD — link will be added here once published_
+> - Video: _TBD_
+
+---
+
+## Repo layout
 
 ```
-MetroCrowdManager/
-├── __init__.py                 # Module exports
-├── models.py                   # Action and Observation Pydantic models
-├── client.py                   # MetrocrowdmanagerEnv WebSocket client
-├── inference.py                # Baseline inference script (mandatory)
-├── openenv.yaml                # OpenEnv manifest with task definitions
-├── pyproject.toml              # Project metadata and dependencies
-├── Dockerfile                  # Container image definition
-├── README.md                   # This file
-└── server/
-    ├── __init__.py             # Server module exports
-    ├── MetroCrowdManager_environment.py  # Core environment logic
-    ├── rewards.py              # 7 rule-based reward functions
-    └── app.py                  # FastAPI application
+.
+├── README.md                     # This file (hackathon submission entrypoint)
+├── MetroCrowdManager/            # The OpenEnv environment package (gets pushed as the HF Space)
+│   ├── README.md                 # Space-facing README (env API + tool docs)
+│   ├── openenv.yaml              # Manifest with task + tool spec
+│   ├── server/                   # FastAPI + FastMCP env server
+│   ├── client.py                 # Async client used by training + inference
+│   ├── inference.py              # Baseline agentic-loop inference
+│   └── ...
+├── training/
+│   ├── hf_jobs_train_grpo.py     # GRPO training script run on HF Jobs A100
+│   ├── agentic_rollout_func.py   # Agentic rollout for TRL's GRPOTrainer
+│   ├── rollout.py                # Single-episode agentic loop (canonical)
+│   └── ...
+├── notebooks/
+│   └── train_on_hf_jobs.ipynb    # Colab notebook: launches HF Jobs + plots
+├── scripts/
+│   ├── full_run_hf_job.sh        # CLI entrypoint to submit HF Jobs A100 runs
+│   ├── smoke_hf_job.sh           # Short smoke run for plumbing checks
+│   └── test_rollout.py           # Local rollout sanity test
+├── docs/plots/                   # Loss + reward PNGs referenced in this README
+└── outputs/                      # Local training artifacts (rewards.csv, adapters)
 ```
+
+---
+
+## License
+
+This project is licensed under the BSD-3-Clause license (inherited from the
+OpenEnv core dependency). See individual file headers for details.
+
+## Authors
+
+Giridaran D, Dhiwakar Nagarajan
