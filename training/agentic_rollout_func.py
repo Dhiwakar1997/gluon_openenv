@@ -357,6 +357,7 @@ def make_agentic_rollout_func(
     temperature: float = 0.7,
     top_p: float = 0.95,
     log_first_sample_timing: bool = True,
+    log_every_sample: bool = True,
 ) -> Callable[[List[str], Any], Dict[str, Any]]:
     """Build a TRL-compatible `rollout_func`.
 
@@ -375,6 +376,11 @@ def make_agentic_rollout_func(
         temperature, top_p: Sampling.
         log_first_sample_timing: Print per-turn timing for sample 0 of
             each batch so it's easy to spot a runaway turn.
+        log_every_sample: When True, print a one-liner for every rollout
+            (e.g. ``sample 3/8 task=ticket_booking elapsed=51.4s``) so HF
+            Jobs logs visibly tick once per rollout instead of going dark
+            for the full ``batch_size * grad_accum`` rollouts between
+            optimizer steps.
     """
 
     def rollout_func(prompts: List[str], trainer: Any) -> Dict[str, Any]:
@@ -418,7 +424,16 @@ def make_agentic_rollout_func(
                     seed=seed,
                 )
                 elapsed = time.time() - t0
-                if log_first_sample_timing and i == 0:
+                if log_every_sample:
+                    print(
+                        f"[rollout] sample {i + 1}/{len(prompts)} task={task_name} "
+                        f"comp_len={len(result['completion_ids'])} "
+                        f"turns={len(result['turn_history'])} "
+                        f"reward={result['reward']:.3f} "
+                        f"elapsed={elapsed:.1f}s",
+                        flush=True,
+                    )
+                elif log_first_sample_timing and i == 0:
                     print(
                         f"[rollout] sample0 task={task_name} "
                         f"comp_len={len(result['completion_ids'])} "

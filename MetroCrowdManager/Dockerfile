@@ -65,11 +65,19 @@ COPY --from=builder /app/env/.venv /app/.venv
 # Copy the environment code
 COPY --from=builder /app/env /app/env
 
+# Surface the README at /app/README.md so the OpenEnv web UI can render it
+# (web_interface._load_readme_from_filesystem looks at /app/README.md first).
+RUN cp /app/env/README.md /app/README.md
+
 # Set PATH to use the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Set PYTHONPATH so imports work correctly
 ENV PYTHONPATH="/app/env:$PYTHONPATH"
+
+# Belt-and-suspenders: also expose the README path via env var, which is the
+# second location the OpenEnv web UI tries when /app/README.md is missing.
+ENV ENV_README_PATH="/app/env/README.md"
 
 ENV ENABLE_WEB_INTERFACE=true
 
