@@ -19,6 +19,20 @@ tags:
 
 # MetroCrowdManager — Agentic MCP Environment for OpenEnv
 
+<div align="center">
+
+<a href="./blog.md">
+  <img src="https://img.shields.io/badge/%F0%9F%93%9D%20%20READ%20THE%20BLOG-The%20story%20behind%20MetroCrowdManager-FFD21E?style=for-the-badge&labelColor=FF9D00" alt="Read the blog" height="44" />
+</a>
+
+### 👉 [**Read `blog.md` — the full story behind this project**](./blog.md) 👈
+
+*How a missed train at Hauz Khas became a Scaler × Hugging Face hackathon submission — with the tools, rewards, and architecture explained end-to-end.*
+
+</div>
+
+---
+
 [![GitHub repo](https://img.shields.io/badge/GitHub-Dhiwakar1997%2Fgluon__openenv-181717?logo=github)](https://github.com/Dhiwakar1997/gluon_openenv)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb)
 [![Trackio dashboard](https://img.shields.io/badge/Trackio-DhiwakarDev%2Fmcm--trackio-FF6F00?logo=huggingface)](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio)
