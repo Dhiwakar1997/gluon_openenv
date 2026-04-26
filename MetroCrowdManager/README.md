@@ -33,9 +33,11 @@ tags:
 
 ---
 
+[![Hugging Face Space](https://img.shields.io/badge/HF%20Space-DhiwakarDev%2Fopenenv-FFD21E?logo=huggingface)](https://huggingface.co/spaces/DhiwakarDev/openenv)
 [![GitHub repo](https://img.shields.io/badge/GitHub-Dhiwakar1997%2Fgluon__openenv-181717?logo=github)](https://github.com/Dhiwakar1997/gluon_openenv)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb)
 [![Trackio dashboard](https://img.shields.io/badge/Trackio-DhiwakarDev%2Fmcm--trackio-FF6F00?logo=huggingface)](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio)
+[![Mini-blog](https://img.shields.io/badge/Mini--blog-The%20story%20behind%20MetroCrowdManager-FFD21E)](./blog.md)
 
 A multi-task **agentic** environment where an LLM plays the role of a metro
 station assistant. The agent orchestrates **11 simulated MCP tools** (FastMCP
@@ -46,6 +48,20 @@ process payments, and issue announcements. Built on
 > Hackathon submission for the OpenEnv RL Hackathon. The env is fully
 > tool-use focused: every reward signal is grounded in real tool outputs, not
 > in hallucinated text.
+
+---
+
+## Hackathon deliverables (where to find each one)
+
+| # | Requirement | Status | Link |
+|---|---|:---:|---|
+| 1 | Built on **OpenEnv** (latest release) | ✅ | [`server/MetroCrowdManager_environment.py`](server/MetroCrowdManager_environment.py) — subclasses `MCPEnvironment` |
+| 2 | Working training script (TRL — GRPO) | ✅ | [`training/hf_jobs_train_grpo.py`](https://github.com/Dhiwakar1997/gluon_openenv/blob/main/training/hf_jobs_train_grpo.py) |
+| 3 | Re-runnable Colab notebook | ✅ | [`notebooks/train_on_hf_jobs.ipynb`](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb) |
+| 4 | Loss + reward plots from a real run | ✅ | [Below](#what-the-training-curves-tell-us) — also live on the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) |
+| 5 | **HF Space (env discoverable + runnable)** | ✅ | <https://huggingface.co/spaces/DhiwakarDev/openenv> |
+| 6 | Mini-blog | ✅ | [`blog.md`](./blog.md) — the full story, end-to-end |
+| 7 | Experiment tracking | ✅ | [Trackio Space](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) (TRL `TrackioCallback`) |
 
 ---
 
@@ -302,10 +318,13 @@ MetroCrowdManager/
 
 ## Links
 
+- **🤗 Hugging Face Space (env)**: <https://huggingface.co/spaces/DhiwakarDev/openenv>
 - **GitHub repo**: <https://github.com/Dhiwakar1997/gluon_openenv>
 - **Colab notebook**: [`notebooks/train_on_hf_jobs.ipynb`](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb)
-- **Trackio dashboard**: <https://huggingface.co/spaces/DhiwakarDev/mcm-trackio>
-- **Mini-blog write-up**: _coming soon_ — will be linked in the root [README.md](https://github.com/Dhiwakar1997/gluon_openenv/blob/main/README.md)
+- **Trackio dashboard (live training metrics)**: <https://huggingface.co/spaces/DhiwakarDev/mcm-trackio>
+- **Mini-blog write-up**: [`blog.md`](./blog.md) (the full story behind the project)
+- **Top-level submission README**: [`README.md`](https://github.com/Dhiwakar1997/gluon_openenv/blob/main/README.md)
+- **Trained adapter weights**: [`DhiwakarDev/mcm-gemma3-27b-grpo-<phase>`](https://huggingface.co/DhiwakarDev) on HF Hub
 
 ---
 

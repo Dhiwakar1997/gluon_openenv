@@ -13,17 +13,37 @@
 
 ---
 
-## TL;DR for judges
+## TL;DR for judges — hackathon non-negotiables checklist
 
-| Hackathon requirement | Where to find it |
+Every required deliverable is linked here directly so nothing has to be hunted for.
+
+| # | Hackathon requirement | Status | Where to find it |
+|---|---|:---:|---|
+| 1 | Built on **OpenEnv** (latest release) | ✅ | [`MetroCrowdManager/server/MetroCrowdManager_environment.py`](MetroCrowdManager/server/MetroCrowdManager_environment.py) — subclasses `openenv.core.env_server.mcp_environment.MCPEnvironment` |
+| 2 | Working training script with an RL framework | ✅ | **Hugging Face TRL** (GRPO) — [`training/hf_jobs_train_grpo.py`](training/hf_jobs_train_grpo.py) |
+| 3 | Colab notebook judges can re-run | ✅ | [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb) — submits the run to HF Jobs A100, tails logs, embeds the live Trackio dashboard, plots loss + reward inline |
+| 4 | Evidence of a real training run (loss + reward plots) | ✅ | See [Results](#results) — committed PNGs at [`MetroCrowdManager/images/`](MetroCrowdManager/images/) and live curves on the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) |
+| 5 | Environment pushed to a **Hugging Face Space** | ✅ | <https://huggingface.co/spaces/DhiwakarDev/openenv> |
+| 6 | Mini-blog or <2 min video | ✅ | Mini-blog (full story behind the project): [`MetroCrowdManager/blog.md`](MetroCrowdManager/blog.md) |
+| 7 | README that motivates, explains, and shows results | ✅ | This file (you're reading it) + the env-level [`MetroCrowdManager/README.md`](MetroCrowdManager/README.md) |
+| 8 | README links to HF Space + all materials | ✅ | All linked in this section and in [Submission materials](#submission-materials) below |
+| 9 | Experiment tracking | ✅ | Every run streams to the [Trackio Space](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) via TRL's `TrackioCallback` |
+
+---
+
+## Submission materials
+
+A single place where every external resource lives, per the hackathon brief.
+
+| Resource | Link |
 |---|---|
-| Built on **OpenEnv** (latest) | [`MetroCrowdManager/server/MetroCrowdManager_environment.py`](MetroCrowdManager/server/MetroCrowdManager_environment.py) — subclasses `openenv.core.env_server.mcp_environment.MCPEnvironment` |
-| RL framework | **Hugging Face TRL** (GRPO) — [`training/hf_jobs_train_grpo.py`](training/hf_jobs_train_grpo.py) |
-| **Colab notebook** judges can re-run | [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb) — submits the run to HF Jobs A100, tails logs, embeds the live trackio dashboard, plots loss + reward inline |
-| Loss + reward plots from a real run | [`docs/plots/`](docs/plots/) (see [Results](#results)) + live on the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) |
-| HF Space (env discoverable + runnable) | <https://huggingface.co/spaces/DhiwakarDev/openenv> |
-| Mini-blog or <2 min video | _Coming soon_ — see [Mini-blog / video](#mini-blog--video) |
-| Experimental tracking turned on | Yes — every run logs to the [Trackio Space](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio) via TRL's `TrackioCallback` |
+| 🤗 **Hugging Face Space (the environment)** | <https://huggingface.co/spaces/DhiwakarDev/openenv> |
+| 📓 **Colab notebook (re-runnable training)** | [Open in Colab](https://colab.research.google.com/github/Dhiwakar1997/gluon_openenv/blob/main/notebooks/train_on_hf_jobs.ipynb) · [view on GitHub](notebooks/train_on_hf_jobs.ipynb) |
+| 📈 **Trackio dashboard (live training metrics)** | <https://huggingface.co/spaces/DhiwakarDev/mcm-trackio> |
+| 📝 **Mini-blog (project story + reward design walkthrough)** | [`MetroCrowdManager/blog.md`](MetroCrowdManager/blog.md) |
+| 🐙 **GitHub repo (source of truth)** | <https://github.com/Dhiwakar1997/gluon_openenv> |
+| 📦 **Trained adapter weights (per task)** | [`DhiwakarDev/mcm-gemma3-27b-grpo-<phase>`](https://huggingface.co/DhiwakarDev) on HF Hub |
+| 📚 **Env-level README (tools + reward design)** | [`MetroCrowdManager/README.md`](MetroCrowdManager/README.md) |
 
 ---
 
@@ -218,12 +238,14 @@ at end-of-training.
 
 ## Mini-blog / video
 
-> **Coming soon.** A short mini-blog on Hugging Face explaining the env
-> design, the reward shaping decisions, and the GRPO results will be linked
-> here. Optional <2 min YouTube walkthrough will be linked alongside.
->
-> - Mini-blog: _TBD — link will be added here once published_
-> - Video: _TBD_
+The full story behind MetroCrowdManager — the missed train at Hauz Khas, the
+three-task design, the tool catalog, the reward shaping decisions, and what
+the training curves taught us — is written up as a mini-blog inside the repo:
+
+> 📝 **[Read the mini-blog → `MetroCrowdManager/blog.md`](MetroCrowdManager/blog.md)**
+
+The blog is also rendered on the [Hugging Face Space](https://huggingface.co/spaces/DhiwakarDev/openenv)
+landing page (linked from the env-facing README banner).
 
 ---
 
@@ -233,11 +255,13 @@ at end-of-training.
 .
 ├── README.md                     # This file (hackathon submission entrypoint)
 ├── MetroCrowdManager/            # The OpenEnv environment package (gets pushed as the HF Space)
-│   ├── README.md                 # Space-facing README (env API + tool docs)
+│   ├── README.md                 # Space-facing README (env API + tool docs + results)
+│   ├── blog.md                   # Mini-blog: project story + reward design walkthrough
 │   ├── openenv.yaml              # Manifest with task + tool spec
 │   ├── server/                   # FastAPI + FastMCP env server
 │   ├── client.py                 # Async client used by training + inference
 │   ├── inference.py              # Baseline agentic-loop inference
+│   ├── images/                   # Committed loss + reward PNGs (referenced from both READMEs)
 │   └── ...
 ├── training/
 │   ├── hf_jobs_train_grpo.py     # GRPO training script run on HF Jobs A100
@@ -250,7 +274,7 @@ at end-of-training.
 │   ├── full_run_hf_job.sh        # CLI entrypoint to submit HF Jobs A100 runs
 │   ├── smoke_hf_job.sh           # Short smoke run for plumbing checks
 │   └── test_rollout.py           # Local rollout sanity test
-├── docs/plots/                   # Loss + reward PNGs referenced in this README
+├── docs/plots/                   # Optional dump dir for notebook-regenerated PNGs
 └── outputs/                      # Local training artifacts (rewards.csv, adapters)
 ```
 
