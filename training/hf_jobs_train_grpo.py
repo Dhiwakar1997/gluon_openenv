@@ -348,6 +348,11 @@ def main() -> None:
     if trackio_enabled:
         try:
             import trackio  # noqa: F401
+            # Modern TRL's TrackioCallback reads these from the environment;
+            # GRPOConfig doesn't accept `project` / `trackio_space_id` kwargs.
+            os.environ.setdefault("TRACKIO_PROJECT", args.trackio_project)
+            if args.trackio_space_id:
+                os.environ.setdefault("TRACKIO_SPACE_ID", args.trackio_space_id)
             print(f"[hf-jobs-train] trackio enabled: project={args.trackio_project} "
                   f"space={args.trackio_space_id} run={run_name}")
         except ImportError:
@@ -404,11 +409,17 @@ def main() -> None:
             seed=args.seed,
             report_to="trackio" if trackio_enabled else "none",
             dataloader_pin_memory=True,
+            run_name=run_name,
         )
         if trackio_enabled:
-            grpo_kwargs["project"] = args.trackio_project
-            grpo_kwargs["run_name"] = run_name
-            if args.trackio_space_id:
+            # `project` and `trackio_space_id` are GRPOConfig fields in TRL 1.0+.
+            # Older TRLs don't have them; we filter to whatever the installed
+            # version actually accepts so we don't crash on an unknown kwarg.
+            import inspect
+            grpo_fields = set(inspect.signature(GRPOConfig).parameters.keys())
+            if "project" in grpo_fields:
+                grpo_kwargs["project"] = args.trackio_project
+            if args.trackio_space_id and "trackio_space_id" in grpo_fields:
                 grpo_kwargs["trackio_space_id"] = args.trackio_space_id
         training_args = GRPOConfig(**grpo_kwargs)
 
