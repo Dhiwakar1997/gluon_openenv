@@ -39,6 +39,7 @@ try:
     from . import tools as tools_mod
     from .agentic_rewards import (
         conversation_quality_reward,
+        count_valid_tool_calls,
         format_reward,
         has_malformed_tool_call,
         payment_discipline_reward,
@@ -68,6 +69,7 @@ except ImportError:  # pragma: no cover
     import tools as tools_mod
     from agentic_rewards import (
         conversation_quality_reward,
+        count_valid_tool_calls,
         format_reward,
         has_malformed_tool_call,
         payment_discipline_reward,
@@ -381,7 +383,7 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
         assert sc is not None
 
         seq = tool_sequence_reward(turn_history, "ticket_booking")
-        fid = tool_fidelity_reward(turn_history)
+        fid = tool_fidelity_reward(turn_history, "ticket_booking")
         eco = tool_economy_reward(turn_history, "ticket_booking")
         fmt = format_reward(turn_history)
         task_success = task_success_reward(turn_history, sc)
@@ -417,11 +419,27 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
         assert sc is not None
 
         seq = tool_sequence_reward(turn_history, "ticket_issuance")
-        fid = tool_fidelity_reward(turn_history)
+        fid = tool_fidelity_reward(turn_history, "ticket_issuance")
         eco = tool_economy_reward(turn_history, "ticket_issuance")
         fmt = format_reward(turn_history)
         ticket = ticket_schema_validity(content, sc)
         lang = compute_language_consistency(content, [], [], 10)
+
+        # Heavy penalty: ticket_issuance is a tool-grounded task. If the
+        # agent submitted without making a single valid tool call, no
+        # field in the JSON could have come from real env data — zero
+        # every component except a small format/language signal so the
+        # model can't farm easy reward by emitting empty or hallucinated
+        # answers.
+        if count_valid_tool_calls(turn_history) == 0:
+            return {
+                "tool_sequence":          0.0,
+                "tool_fidelity":          0.0,
+                "tool_economy":           0.0,
+                "format":                 0.10 * fmt,
+                "ticket_schema_validity": 0.0,
+                "language_consistency":   0.0,
+            }
 
         return {
             "tool_sequence":          0.25 * seq,
@@ -448,7 +466,7 @@ class MetrocrowdmanagerEnvironment(MCPEnvironment):
         nc = len(train)
 
         seq = tool_sequence_reward(turn_history, "crowd_announcement")
-        fid = tool_fidelity_reward(turn_history)
+        fid = tool_fidelity_reward(turn_history, "crowd_announcement")
         eco = tool_economy_reward(turn_history, "crowd_announcement")
         fmt = format_reward(turn_history)
         dist = compute_distribution_accuracy(content, train, plat, nc)

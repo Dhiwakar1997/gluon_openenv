@@ -19,6 +19,7 @@ in-process model, or a vLLM server.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -40,9 +41,23 @@ from openenv.core.env_server.mcp_types import (
 # ---------------------------------------------------------------------------
 
 _TOOL_FORMAT_BLOCK = """\
-You may invoke MCP tools by emitting one or more blocks of the form:
+You may invoke MCP tools by emitting one or more blocks of the EXACT form:
 
     <tool_call>{"name": "<tool_name>", "arguments": { ... }}</tool_call>
+
+CRITICAL FORMAT RULES — a tool call is only valid if ALL hold:
+- Every <tool_call> MUST be closed with a matching </tool_call> on the same
+  message. An unclosed <tool_call> will be discarded and earn zero reward.
+- The opening tag, the JSON payload, and the closing </tool_call> tag MUST
+  all appear together. Do not split a tool call across messages, do not
+  emit a bare <tool_call> with no closing tag, and do not stop generating
+  before writing </tool_call>.
+- Keep the JSON payload compact (single line, no trailing commentary
+  between the JSON and </tool_call>) so the call fits before any output
+  limit is reached.
+- Before emitting <tool_call>, make sure you have room to also emit the
+  full JSON and the closing </tool_call> in the same response. If unsure,
+  finish your current call first instead of starting a new one.
 
 Tool results will be returned in the next user message inside
 <tool_result> tags. When you are ready to give your FINAL answer, reply
@@ -111,9 +126,16 @@ Available tools (call ONLY with the parameter names shown):
     "found": bool, "coaches": [int×10], "coach_labels": ["A".."J"]}.
     Example: <tool_call>{"name": "get_train_crowd_occupation", "arguments": {"platform": 3}}</tool_call>
 
-  * get_ideal_zone(platform: int) — single best zone (A-J) for one
-    passenger. Returns {"platform": int, "found": bool,
-    "zone": "A".."J"|null, "zone_index": int, "reasoning": str}.
+  * get_ideal_zone(platform: int) — recommends the SINGLE best boarding
+    zone (A-J) for one passenger on `platform`, balancing the current
+    platform crowd against the train's coach occupancy so the passenger
+    boards where both the platform zone and the aligned coach are least
+    full. Returns {"platform": int, "found": bool, "zone": "A".."J"|null,
+    "zone_index": int, "reasoning": str}.
+    USE THIS WHEN: you need the `ideal_zone` field for the ticket JSON
+    (i.e. always, for `ticket_issuance`). Prefer this over computing a
+    zone yourself from `get_platform_crowd` / `get_train_crowd_occupation`
+    — this tool already combines both signals correctly.
     Example: <tool_call>{"name": "get_ideal_zone", "arguments": {"platform": 3}}</tool_call>
 
   * get_current_time() — station-system time as HH:MM. No arguments.
@@ -134,9 +156,17 @@ Available tools (call ONLY with the parameter names shown):
     "coaches": [int×10], "coach_labels": ["A".."J"]}.
     Example: <tool_call>{"name": "get_train_crowd_occupation", "arguments": {"platform": 3}}</tool_call>
 
-  * get_ideal_distribution(platform: int) — full 10-zone ideal
-    redistribution. Returns {"platform": int, "found": bool,
-    "distribution": [int×10], "zone_labels": ["A".."J"]}.
+  * get_ideal_distribution(platform: int) — recommends how the FULL
+    incoming platform crowd should be redistributed across all 10 zones
+    (A-J) so boarding is balanced against the train's per-coach
+    occupancy. Returns 10 integer counts that sum to (approximately) the
+    current total platform crowd, ordered A→J. Returns {"platform": int,
+    "found": bool, "distribution": [int×10], "zone_labels": ["A".."J"]}.
+    USE THIS WHEN: you need the "Recommended Platform Distribution" line
+    of a crowd announcement. This tool returns the exact 10-int array to
+    emit — do NOT hand-derive it from `get_platform_crowd` /
+    `get_train_crowd_occupation`. Those two are for the COLOR CODE lines
+    only.
     Example: <tool_call>{"name": "get_ideal_distribution", "arguments": {"platform": 3}}</tool_call>
 """
 
@@ -169,6 +199,26 @@ SYSTEM_PROMPTS: Dict[str, str] = {
         "then return a single JSON object with exactly these keys:\n"
         '  {"time": "HH:MM", "from": "<station>", "to": "<station>",\n'
         '   "price": <number>, "platform": <int>, "ideal_zone": "<A-J>"}\n\n'
+        "MANDATORY tool-use policy: every field above except `from` and `to`\n"
+        "(which come from the passenger prompt) MUST be populated from a tool\n"
+        "result. Never guess, hallucinate, or carry over numbers from prior\n"
+        "examples. If a value is not in your context, that is a signal to call\n"
+        "a tool — not to invent.\n\n"
+        "Field-by-field tool plan (call in this order, one at a time):\n"
+        "  1. `time` ← call `get_current_time()` and copy the returned\n"
+        "     \"HH:MM\" string verbatim.\n"
+        "  2. `platform` ← call `get_platform_for_destination(destination=<to>)`\n"
+        "     using the destination from the passenger prompt; copy the\n"
+        "     returned integer. Do NOT derive a platform from any other source.\n"
+        "  3. `ideal_zone` ← call `get_ideal_zone(platform=<platform from\n"
+        "     step 2>)` and copy the returned `zone` letter. You only need this\n"
+        "     one tool for the zone; do not call `get_platform_crowd` or\n"
+        "     `get_train_crowd_occupation` for `ticket_issuance`.\n"
+        "  4. `price` ← if the passenger prompt does not state a price, call\n"
+        "     a pricing tool when one is available; otherwise use the price\n"
+        "     given in the prompt. Never make one up.\n\n"
+        "After the tools return, emit ONLY the final JSON object as your last\n"
+        "message (no surrounding prose, no code fences, no <tool_call> blocks).\n"
         "Use values returned by tools — do not invent prices or zones.\n\n"
         + _TOOL_FORMAT_BLOCK
         + "\n"
@@ -183,6 +233,28 @@ SYSTEM_PROMPTS: Dict[str, str] = {
         "  Platform Zone Color Codes: [<10 hex>]\n"
         "  Train Coach Color Codes: [<10 hex>]\n\n"
         "Color reference: #008000 (≤40), #FFFF00 (40–60), #FF8C00 (60–80), #FF0000 (>80).\n\n"
+        "MANDATORY tool-use policy: every numeric array in your output MUST come\n"
+        "from a tool result. The platform number comes from the prompt; the three\n"
+        "10-element arrays do NOT — call the tools below and copy their values.\n"
+        "Do not invent percentages, do not reuse arrays from earlier turns, and\n"
+        "do not approximate.\n\n"
+        "Line-by-line tool plan (call all three, one at a time, in this order):\n"
+        "  1. Recommended Platform Distribution ← call\n"
+        "     `get_ideal_distribution(platform=<announced>)` and copy the\n"
+        "     returned `distribution` array verbatim (10 ints, A→J). This is\n"
+        "     the ONLY tool that produces this line — do not derive it yourself.\n"
+        "  2. Platform Zone Color Codes ← call\n"
+        "     `get_platform_crowd(platform=<announced>)`, take the returned\n"
+        "     `zones` array (10 ints, A→J), and map each value to its color\n"
+        "     using the reference above. Emit the 10 hex codes in order.\n"
+        "  3. Train Coach Color Codes ← call\n"
+        "     `get_train_crowd_occupation(platform=<announced>)`, take the\n"
+        "     returned `coaches` array (10 ints, A→J), and map each to a hex\n"
+        "     code via the same reference. Emit the 10 hex codes in order.\n\n"
+        "Use the announcement text to politely steer crowds toward the\n"
+        "less-loaded zones implied by step 1's distribution. Only after all\n"
+        "three tool calls have returned should you emit the final structured\n"
+        "block as your last message (no <tool_call> blocks in that message).\n\n"
         + _TOOL_FORMAT_BLOCK
         + "\n"
         + _CROWD_ANNOUNCEMENT_TOOLS
@@ -195,18 +267,28 @@ SYSTEM_PROMPTS: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+# Recover trailing tool calls that were truncated before </tool_call> was
+# emitted (e.g. `--max-completion-len` cut the generation mid-tag). Anchored
+# to end-of-string so we don't double-count a properly closed call.
+_UNCLOSED_TRAILING_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*\Z", re.DOTALL
+)
 
 
 def parse_tool_calls(text: str) -> List[Dict[str, Any]]:
     """Extract tool call payloads from a model's text. Malformed blocks are
     ignored (they will fail `format_reward`)."""
+    text = text or ""
     calls: List[Dict[str, Any]] = []
-    for raw in _TOOL_CALL_RE.findall(text or ""):
+    last_end = 0
+    for m in _TOOL_CALL_RE.finditer(text):
         try:
-            payload = json.loads(raw)
+            payload = json.loads(m.group(1))
         except json.JSONDecodeError:
+            last_end = m.end()
             continue
         if not isinstance(payload, dict) or "name" not in payload:
+            last_end = m.end()
             continue
         calls.append(
             {
@@ -214,6 +296,24 @@ def parse_tool_calls(text: str) -> List[Dict[str, Any]]:
                 "arguments": payload.get("arguments") or {},
             }
         )
+        last_end = m.end()
+
+    # Recover an unclosed <tool_call>{...} at the tail of the text — common
+    # when generation hits max_completion_length before </tool_call>.
+    tail = text[last_end:]
+    m = _UNCLOSED_TRAILING_TOOL_CALL_RE.search(tail)
+    if m:
+        try:
+            payload = json.loads(m.group(1))
+            if isinstance(payload, dict) and "name" in payload:
+                calls.append(
+                    {
+                        "name": payload["name"],
+                        "arguments": payload.get("arguments") or {},
+                    }
+                )
+        except json.JSONDecodeError:
+            pass
     return calls
 
 
@@ -333,7 +433,36 @@ def replay_completion_sync(
         turn_history.append(turn_record)
         idx = chunk_end + len("</tool_call>")
 
-    final_text = text[idx:].strip()
+    # Recover a trailing unclosed <tool_call>{...} (likely truncated by
+    # max_completion_length). Execute it so the model still gets shaped
+    # signal, but exclude it from final_text so the JSON answer parser
+    # isn't confused.
+    tail = text[idx:]
+    m = _UNCLOSED_TRAILING_TOOL_CALL_RE.search(tail)
+    if m:
+        trailing_calls = parse_tool_calls(tail)
+        if trailing_calls:
+            turn_record = {"text": tail, "tool_calls": []}
+            for call in trailing_calls:
+                result_obs = env.step(
+                    CallToolAction(
+                        tool_name=call["name"], arguments=call["arguments"]
+                    )
+                )
+                result_obs = _unwrap(result_obs)
+                data, error = _extract_call_result(result_obs)
+                turn_record["tool_calls"].append(
+                    {
+                        "name": call["name"],
+                        "arguments": call["arguments"],
+                        "result": data,
+                        "error": error,
+                    }
+                )
+            turn_history.append(turn_record)
+            tail = tail[: m.start()]
+
+    final_text = tail.strip()
     turn_history.append({"text": final_text, "tool_calls": []})
     step_result = env.step(
         SubmitResponseAction(
@@ -349,8 +478,39 @@ def replay_completion_sync(
         "breakdown": breakdown,
         "turn_history": turn_history,
         "final_text": final_text,
+        "raw_completion": completion_text or "",
+        "system_prompt": SYSTEM_PROMPTS.get(task_name, ""),
         "initial_observation": initial_observation,
         "debug_context": debug_context,
+    }
+
+
+def make_replay_result_from_rollout(
+    *,
+    turn_history: List[dict],
+    final_text: str,
+    reward: float,
+    breakdown: Dict[str, float],
+    initial_observation: Dict[str, Any],
+    raw_completion: str,
+    system_prompt: str,
+    debug_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Assemble the dict shape that `format_training_debug_log` expects.
+
+    Used by the multi-turn `rollout_func` (training/agentic_rollout_func.py)
+    so we can reuse the existing debug-log formatter on rollout-produced
+    data without re-running the env.
+    """
+    return {
+        "reward": float(reward),
+        "breakdown": dict(breakdown or {}),
+        "turn_history": list(turn_history or []),
+        "final_text": final_text or "",
+        "raw_completion": raw_completion or "",
+        "system_prompt": system_prompt or "",
+        "initial_observation": dict(initial_observation or {}),
+        "debug_context": dict(debug_context or {}),
     }
 
 
@@ -367,6 +527,40 @@ def format_training_debug_log(
     debug_context = replay_result.get("debug_context", {}) or {}
     turn_history = replay_result.get("turn_history", []) or []
     final_text = replay_result.get("final_text", "") or ""
+    raw_completion = replay_result.get("raw_completion", "") or ""
+    system_prompt = replay_result.get("system_prompt", "") or ""
+
+    # Always print the user prompt (env-emitted text). Set
+    # GLUON_DEBUG_FULL_PROMPTS=1 to ALSO dump the system prompt — that's
+    # ~3KB per sample so it's off by default.
+    user_prompt = initial.get("prompt_text", "") or ""
+    if user_prompt:
+        lines.append("---- USER PROMPT ----")
+        lines.append(user_prompt.rstrip())
+    if os.environ.get("GLUON_DEBUG_FULL_PROMPTS") == "1" and system_prompt:
+        lines.append("---- SYSTEM PROMPT ----")
+        lines.append(system_prompt.rstrip())
+    if raw_completion:
+        lines.append("---- AGENT RESPONSE (raw) ----")
+        lines.append(raw_completion.rstrip())
+    else:
+        lines.append("---- AGENT RESPONSE (raw) ---- <EMPTY>")
+    if turn_history:
+        tool_summary = []
+        for t_idx, turn in enumerate(turn_history):
+            for tc in turn.get("tool_calls", []) or []:
+                tool_summary.append(
+                    f"  turn{t_idx} call: {tc.get('name')}"
+                    f"({json.dumps(tc.get('arguments') or {}, sort_keys=True)})"
+                    f" -> err={tc.get('error')!r}"
+                    f" data={json.dumps(tc.get('result'), sort_keys=True, default=str)[:200]}"
+                )
+        if tool_summary:
+            lines.append("---- TOOL CALLS ----")
+            lines.extend(tool_summary)
+        else:
+            lines.append("---- TOOL CALLS ---- <NONE>")
+    lines.append("---- TASK-SPECIFIC TRACE ----")
 
     if task_name == "ticket_booking":
         for turn in turn_history:
@@ -763,7 +957,14 @@ def _reward_value(step_result: Any, obs: Any) -> float:
 
 
 def _extract_call_result(obs: Any) -> tuple[Any, Optional[str]]:
-    """Pull the data dict (and any error string) out of a CallToolObservation."""
+    """Pull the data dict (and any error string) out of a CallToolObservation.
+
+    Handles both shapes the env can deliver:
+      * In-process / FastMCP: obs.result is a CallToolResult object with
+        attributes `.data`, `.structured_content`, `.content`.
+      * Remote / WebSocket: obs.result has been JSON round-tripped, so it
+        arrives as a plain dict with the SAME keys (`data`, `structured_content`).
+    """
     if isinstance(obs, CallToolObservation):
         if obs.error is not None:
             err = getattr(obs.error, "message", str(obs.error))
@@ -771,10 +972,15 @@ def _extract_call_result(obs: Any) -> tuple[Any, Optional[str]]:
         result = obs.result
         if result is None:
             return None, "no result"
-        # FastMCP CallToolResult exposes .data and .structured_content
-        data = getattr(result, "data", None)
+
+        def _read(field: str) -> Any:
+            if isinstance(result, dict):
+                return result.get(field)
+            return getattr(result, field, None)
+
+        data = _read("data")
         if data is None:
-            data = getattr(result, "structured_content", None)
+            data = _read("structured_content")
         if isinstance(data, dict) and "result" in data and len(data) == 1:
             data = data["result"]
         return data, None
