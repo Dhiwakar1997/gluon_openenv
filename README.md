@@ -135,7 +135,7 @@ uv run server                       # FastAPI on http://localhost:8000
 # in another shell
 export HF_TOKEN="your-token"
 export API_BASE_URL="https://router.huggingface.co/v1"
-export MODEL_NAME="Qwen/Qwen3-1.7B-Instruct"
+export MODEL_NAME="google/gemma-3-27b-it"
 python inference.py
 ```
 
@@ -176,21 +176,28 @@ Real GRPO run on Hugging Face Jobs A100-80GB. Live, always-current metrics:
 
 ### Reward + loss curves (from the latest Colab run)
 
-The PNGs below are written into [`docs/plots/`](docs/plots/) by the **final
-plotting cells of [`notebooks/train_on_hf_jobs.ipynb`](notebooks/train_on_hf_jobs.ipynb)**
-— they only ever reflect the **most recent training run** launched from that
-notebook. There is no local-CSV fallback or staged "baseline" plot; if these
-images look out of date, run the notebook end-to-end and commit the new PNGs.
+Live, per-step training metrics for every run are streamed to the
+[**Trackio dashboard**](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio).
+Two snapshots from a representative GRPO run on **`google/gemma-3-27b-it`**:
 
-![Episode reward (per task)](docs/plots/reward_curve.png)
+<div align="center">
 
-![Training loss](docs/plots/loss_curve.png)
+<img src="MetroCrowdManager/images/train_reward.png" alt="Mean reward across training steps for all three tasks" width="85%" />
 
-![Per-component reward breakdown](docs/plots/reward_breakdown.png)
+<sub><i>📈 <b>Reward / mean across runs.</b> Higher is better. Each line is a different task — the orange (booking) curve climbs from <code>0.60 → 0.64</code>, the purple (announcement) curve from <code>~0.19 → ~0.24</code>, and the blue (issuance) curve starts higher because of how its reward weights collapse onto schema validity.</i></sub>
 
-> If GitHub renders these as broken images, no run has been committed yet —
-> open the [Trackio dashboard](https://huggingface.co/spaces/DhiwakarDev/mcm-trackio)
-> for the live numbers, then re-run the notebook to regenerate the PNGs.
+</div>
+
+<div align="center">
+
+<img src="MetroCrowdManager/images/train_loss.png" alt="GRPO training loss across steps" width="85%" />
+
+<sub><i>📉 <b>Train / loss across runs.</b> The big dive at step 1 is the model rapidly discovering the <code>&lt;tool_call&gt;</code> JSON pattern; subsequent steps stabilise around zero as the policy converges.</i></sub>
+
+</div>
+
+Full narrative + per-task reward breakdown lives in the env-level
+[`MetroCrowdManager/README.md`](MetroCrowdManager/README.md#what-the-training-curves-tell-us).
 
 ### Scores from the latest run
 

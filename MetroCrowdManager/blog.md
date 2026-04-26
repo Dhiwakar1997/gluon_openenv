@@ -104,7 +104,7 @@ We score this task on **10 dimensions** so the agent learns the *whole* booking 
 
 <div align="center">
 
-<img src="./task1.jpeg" alt="Task 1 — Ticket Booking storyboard" width="80%" />
+<img src="./images/task1.jpeg" alt="Task 1 — Ticket Booking storyboard" width="80%" />
 
 <sub><i>📸 <b>Task 1 storyboard.</b> The agent walks the passenger through destination, source station, ticket count, fare confirmation, payment, and the final printed ticket — all driven by the MCP tool chain.</i></sub>
 
@@ -151,7 +151,7 @@ To produce that `"ideal_zone": "G"`, the agent has to (1) look up the platform f
 
 <div align="center">
 
-<img src="./task2.jpeg" alt="Task 2 — Ticket Issuance storyboard" width="80%" />
+<img src="./images/task2.jpeg" alt="Task 2 — Ticket Issuance storyboard" width="80%" />
 
 <sub><i>📸 <b>Task 2 storyboard.</b> The agent looks up the platform, reads live crowd status across all coaches, derives the ideal middle-zone recommendation, and hands the passenger a ticket with the best zone to board.</i></sub>
 
@@ -200,7 +200,7 @@ Plus the orchestration rewards (`tool_sequence`, `tool_fidelity`, `tool_economy`
 
 <div align="center">
 
-<img src="./task3.jpeg" alt="Task 3 — Crowd Announcement storyboard" width="80%" />
+<img src="./images/task3.jpeg" alt="Task 3 — Crowd Announcement storyboard" width="80%" />
 
 <sub><i>📸 <b>Task 3 storyboard.</b> A new train arrives, the agent reads per-coach crowd status, identifies the less-crowded middle section, and broadcasts a polite, sequential announcement that redirects passengers from the crowded ends toward Coaches 5–8.</i></sub>
 

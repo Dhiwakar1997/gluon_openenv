@@ -1,0 +1,854 @@
+===== Job started at 2026-04-26 07:35:39 =====
+
+debconf: delaying package configuration, since apt-utils is not installed
+
+Selecting previously unselected package libexpat1:amd64.
+
+(Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 14910 files and directories currently installed.)
+
+Preparing to unpack .../0-libexpat1_2.4.7-1ubuntu0.7_amd64.deb ...
+
+Unpacking libexpat1:amd64 (2.4.7-1ubuntu0.7) ...
+
+Selecting previously unselected package libnghttp2-14:amd64.
+
+Preparing to unpack .../1-libnghttp2-14_1.43.0-1ubuntu0.2_amd64.deb ...
+
+Unpacking libnghttp2-14:amd64 (1.43.0-1ubuntu0.2) ...
+
+Selecting previously unselected package libpsl5:amd64.
+
+Preparing to unpack .../2-libpsl5_0.21.0-1.2build2_amd64.deb ...
+
+Unpacking libpsl5:amd64 (0.21.0-1.2build2) ...
+
+Selecting previously unselected package libbrotli1:amd64.
+
+Preparing to unpack .../3-libbrotli1_1.0.9-2build6_amd64.deb ...
+
+Unpacking libbrotli1:amd64 (1.0.9-2build6) ...
+
+Selecting previously unselected package librtmp1:amd64.
+
+Preparing to unpack .../4-librtmp1_2.4+20151223.gitfa8646d.1-2build4_amd64.deb ...
+
+Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2build4) ...
+
+Selecting previously unselected package libssh-4:amd64.
+
+Preparing to unpack .../5-libssh-4_0.9.6-2ubuntu0.22.04.7_amd64.deb ...
+
+Unpacking libssh-4:amd64 (0.9.6-2ubuntu0.22.04.7) ...
+
+Selecting previously unselected package libcurl3-gnutls:amd64.
+
+Preparing to unpack .../6-libcurl3-gnutls_7.81.0-1ubuntu1.23_amd64.deb ...
+
+Unpacking libcurl3-gnutls:amd64 (7.81.0-1ubuntu1.23) ...
+
+Selecting previously unselected package liberror-perl.
+
+Preparing to unpack .../7-liberror-perl_0.17029-1_all.deb ...
+
+Unpacking liberror-perl (0.17029-1) ...
+
+Selecting previously unselected package git-man.
+
+Preparing to unpack .../8-git-man_1%3a2.34.1-1ubuntu1.17_all.deb ...
+
+Unpacking git-man (1:2.34.1-1ubuntu1.17) ...
+
+Selecting previously unselected package git.
+
+Preparing to unpack .../9-git_1%3a2.34.1-1ubuntu1.17_amd64.deb ...
+
+Unpacking git (1:2.34.1-1ubuntu1.17) ...
+
+Setting up libexpat1:amd64 (2.4.7-1ubuntu0.7) ...
+
+Setting up libpsl5:amd64 (0.21.0-1.2build2) ...
+
+Setting up libbrotli1:amd64 (1.0.9-2build6) ...
+
+Setting up libnghttp2-14:amd64 (1.43.0-1ubuntu0.2) ...
+
+Setting up liberror-perl (0.17029-1) ...
+
+Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2build4) ...
+
+Setting up libssh-4:amd64 (0.9.6-2ubuntu0.22.04.7) ...
+
+Setting up git-man (1:2.34.1-1ubuntu1.17) ...
+
+Setting up libcurl3-gnutls:amd64 (7.81.0-1ubuntu1.23) ...
+
+Setting up git (1:2.34.1-1ubuntu1.17) ...
+
+Processing triggers for libc-bin (2.35-0ubuntu3.6) ...
+
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable.It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+
+Cloning into '/workspace/Gluon'...
+
+[hf-jobs-train] trackio enabled: project=mcm-gemma3-27b-full space=DhiwakarDev/mcm-trackio run=ticket_booking-20260426-073634
+
+[hf-jobs-train] phase=ticket_booking tasks=['ticket_booking']
+
+[hf-jobs-train] model=google/gemma-3-27b-it
+
+[hf-jobs-train] loading google/gemma-3-27b-it in 4-bit NF4 (bf16 compute)
+
+
+
+tokenizer_config.json:   0%|          | 0.00/1.16M [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 1.16M/1.16M [00:00<00:00, 16.1MB/s]
+
+
+
+tokenizer.model:   0%|          | 0.00/4.69M [00:00<?, ?B/s][A
+tokenizer.model: 100%|██████████| 4.69M/4.69M [00:00<00:00, 11.1MB/s]
+
+
+
+tokenizer.json:   0%|          | 0.00/33.4M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 33.4M/33.4M [00:00<00:00, 159MB/s]
+
+
+
+added_tokens.json:   0%|          | 0.00/35.0 [00:00<?, ?B/s][A
+added_tokens.json: 100%|██████████| 35.0/35.0 [00:00<00:00, 332kB/s]
+
+
+
+special_tokens_map.json:   0%|          | 0.00/662 [00:00<?, ?B/s][A
+special_tokens_map.json: 100%|██████████| 662/662 [00:00<00:00, 7.96MB/s]
+
+
+
+config.json:   0%|          | 0.00/972 [00:00<?, ?B/s][A
+config.json: 100%|██████████| 972/972 [00:00<00:00, 9.27MB/s]
+
+`torch_dtype` is deprecated! Use `dtype` instead!
+
+
+
+model.safetensors.index.json:   0%|          | 0.00/127k [00:00<?, ?B/s][A
+model.safetensors.index.json: 100%|██████████| 127k/127k [00:00<00:00, 22.1MB/s]
+
+
+
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s][A
+
+
+model-00002-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00007-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00006-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00003-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00004-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00008-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00001-of-00012.safetensors:   0%|          | 0.00/4.85G [00:00<?, ?B/s][A
+
+
+model-00005-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00006-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00004-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00003-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00008-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00001-of-00012.safetensors:   1%|▏         | 67.1M/4.85G [00:01<01:20, 59.4MB/s][A
+
+
+model-00007-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00002-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00005-of-00012.safetensors:   1%|▏         | 67.1M/4.95G [00:01<01:21, 60.3MB/s][A
+
+
+model-00004-of-00012.safetensors:   1%|▏         | 67.1M/4.95G [00:02<01:12, 67.1MB/s][A
+
+
+model-00003-of-00012.safetensors:   4%|▍         | 201M/4.95G [00:02<00:23, 201MB/s][A
+
+
+model-00001-of-00012.safetensors:   4%|▍         | 201M/4.85G [00:02<00:45, 101MB/s]  [A
+
+
+model-00006-of-00012.safetensors:   3%|▎         | 134M/4.95G [00:02<00:43, 112MB/s][A
+
+
+model-00008-of-00012.safetensors:   1%|▏         | 67.0M/4.95G [00:02<01:27, 55.9MB/s][A
+
+
+model-00007-of-00012.safetensors:   5%|▌         | 268M/4.95G [00:02<00:20, 224MB/s][A
+
+
+model-00002-of-00012.safetensors:   4%|▍         | 201M/4.95G [00:02<00:28, 168MB/s][A
+
+
+model-00005-of-00012.safetensors:   5%|▌         | 268M/4.95G [00:02<00:37, 125MB/s]  [A
+
+
+model-00003-of-00012.safetensors:  11%|█         | 537M/4.95G [00:03<00:15, 280MB/s][A
+
+
+model-00004-of-00012.safetensors:   5%|▌         | 268M/4.95G [00:03<00:32, 146MB/s]  [A
+
+
+model-00001-of-00012.safetensors:  12%|█▏        | 604M/4.85G [00:03<00:18, 235MB/s][A
+
+
+model-00006-of-00012.safetensors:  12%|█▏        | 603M/4.95G [00:03<00:14, 306MB/s][A
+
+
+model-00008-of-00012.safetensors:  12%|█▏        | 603M/4.95G [00:03<00:13, 317MB/s]  [A
+
+
+model-00002-of-00012.safetensors:   9%|▉         | 470M/4.95G [00:03<00:20, 222MB/s][A
+
+
+model-00005-of-00012.safetensors:  14%|█▎        | 671M/4.95G [00:03<00:17, 242MB/s][A
+
+
+model-00007-of-00012.safetensors:  11%|█         | 537M/4.95G [00:03<00:19, 224MB/s][A
+
+
+model-00003-of-00012.safetensors:  18%|█▊        | 872M/4.95G [00:04<00:14, 283MB/s][A
+
+
+model-00004-of-00012.safetensors:  12%|█▏        | 604M/4.95G [00:04<00:20, 213MB/s][A
+
+
+model-00001-of-00012.safetensors:  22%|██▏       | 1.07G/4.85G [00:04<00:13, 286MB/s][A
+
+
+model-00007-of-00012.safetensors:  21%|██        | 1.02G/4.95G [00:04<00:11, 332MB/s][A
+
+
+model-00002-of-00012.safetensors:  19%|█▉        | 939M/4.95G [00:04<00:13, 304MB/s][A
+
+
+model-00005-of-00012.safetensors:  24%|██▍       | 1.21G/4.95G [00:04<00:11, 328MB/s][A
+
+
+model-00008-of-00012.safetensors:  23%|██▎       | 1.14G/4.95G [00:04<00:10, 375MB/s][A
+
+
+model-00006-of-00012.safetensors:  23%|██▎       | 1.14G/4.95G [00:05<00:12, 305MB/s][A
+
+
+model-00003-of-00012.safetensors:  32%|███▏      | 1.61G/4.95G [00:05<00:07, 449MB/s][A
+
+
+model-00004-of-00012.safetensors:  22%|██▏       | 1.07G/4.95G [00:05<00:13, 280MB/s][A
+
+
+model-00002-of-00012.safetensors:  28%|██▊       | 1.41G/4.95G [00:05<00:10, 339MB/s][A
+
+
+model-00008-of-00012.safetensors:  32%|███▏      | 1.61G/4.95G [00:05<00:08, 377MB/s][A
+
+
+model-00001-of-00012.safetensors:  30%|███       | 1.48G/4.85G [00:06<00:12, 275MB/s][A
+
+
+model-00006-of-00012.safetensors:  32%|███▏      | 1.61G/4.95G [00:06<00:09, 353MB/s][A
+
+
+model-00005-of-00012.safetensors:  31%|███       | 1.54G/4.95G [00:06<00:13, 261MB/s][A
+
+
+model-00007-of-00012.safetensors:  28%|██▊       | 1.41G/4.95G [00:06<00:13, 271MB/s][A
+
+
+model-00004-of-00012.safetensors:  32%|███▏      | 1.61G/4.95G [00:06<00:09, 345MB/s][A
+
+
+model-00002-of-00012.safetensors:  38%|███▊      | 1.88G/4.95G [00:06<00:08, 358MB/s][A
+
+
+model-00008-of-00012.safetensors:  47%|████▋     | 2.35G/4.95G [00:07<00:05, 459MB/s][A
+
+
+model-00001-of-00012.safetensors:  52%|█████▏    | 2.55G/4.85G [00:07<00:04, 492MB/s][A
+
+
+model-00006-of-00012.safetensors:  41%|████      | 2.01G/4.95G [00:07<00:08, 352MB/s][A
+
+
+model-00005-of-00012.safetensors:  43%|████▎     | 2.15G/4.95G [00:07<00:08, 350MB/s][A
+
+
+model-00003-of-00012.safetensors:  43%|████▎     | 2.15G/4.95G [00:07<00:08, 342MB/s][A
+
+
+model-00007-of-00012.safetensors:  37%|███▋      | 1.81G/4.95G [00:07<00:11, 281MB/s][A
+
+
+model-00006-of-00012.safetensors:  49%|████▊     | 2.41G/4.95G [00:08<00:07, 343MB/s][A
+
+
+model-00003-of-00012.safetensors:  54%|█████▍    | 2.68G/4.95G [00:08<00:05, 389MB/s][A
+
+
+model-00002-of-00012.safetensors:  53%|█████▎    | 2.62G/4.95G [00:08<00:05, 401MB/s][A
+
+
+model-00008-of-00012.safetensors:  65%|██████▍   | 3.22G/4.95G [00:08<00:03, 459MB/s][A
+
+
+model-00005-of-00012.safetensors:  51%|█████▏    | 2.55G/4.95G [00:09<00:07, 308MB/s][A
+
+
+model-00007-of-00012.safetensors:  51%|█████▏    | 2.55G/4.95G [00:09<00:06, 360MB/s][A
+
+
+model-00006-of-00012.safetensors:  58%|█████▊    | 2.88G/4.95G [00:09<00:06, 342MB/s][A
+
+
+model-00005-of-00012.safetensors:  61%|██████    | 3.02G/4.95G [00:10<00:05, 328MB/s][A
+
+
+model-00007-of-00012.safetensors:  60%|█████▉    | 2.95G/4.95G [00:10<00:05, 346MB/s][A
+
+
+model-00001-of-00012.safetensors:  66%|██████▋   | 3.22G/4.85G [00:10<00:05, 322MB/s][A
+
+
+model-00003-of-00012.safetensors:  64%|██████▎   | 3.15G/4.95G [00:10<00:06, 298MB/s][A
+
+
+model-00008-of-00012.safetensors:  76%|███████▌  | 3.76G/4.95G [00:11<00:03, 377MB/s][A
+
+
+model-00004-of-00012.safetensors:  77%|███████▋  | 3.82G/4.95G [00:11<00:02, 458MB/s][A
+
+
+model-00006-of-00012.safetensors:  66%|██████▋   | 3.29G/4.95G [00:11<00:05, 333MB/s][A
+
+
+model-00002-of-00012.safetensors:  68%|██████▊   | 3.35G/4.95G [00:11<00:05, 319MB/s][A
+
+
+model-00003-of-00012.safetensors:  74%|███████▍  | 3.69G/4.95G [00:11<00:03, 350MB/s][A
+
+
+model-00001-of-00012.safetensors:  83%|████████▎ | 4.02G/4.85G [00:12<00:02, 375MB/s][A
+
+
+model-00004-of-00012.safetensors:  88%|████████▊ | 4.36G/4.95G [00:12<00:01, 465MB/s][A
+
+
+model-00006-of-00012.safetensors:  77%|███████▋  | 3.82G/4.95G [00:12<00:03, 372MB/s][A
+
+
+model-00005-of-00012.safetensors:  74%|███████▍  | 3.69G/4.95G [00:12<00:03, 328MB/s][A
+
+
+model-00008-of-00012.safetensors:  85%|████████▌ | 4.22G/4.95G [00:12<00:02, 355MB/s][A
+
+
+model-00002-of-00012.safetensors:  74%|███████▍  | 3.69G/4.95G [00:12<00:04, 310MB/s][A
+
+
+model-00003-of-00012.safetensors:  85%|████████▌ | 4.22G/4.95G [00:13<00:02, 345MB/s][A
+
+
+model-00002-of-00012.safetensors:  81%|████████  | 4.02G/4.95G [00:13<00:03, 303MB/s][A
+
+
+model-00005-of-00012.safetensors:  85%|████████▌ | 4.22G/4.95G [00:14<00:02, 313MB/s][A
+
+
+model-00008-of-00012.safetensors:  95%|█████████▍| 4.69G/4.95G [00:14<00:00, 329MB/s][A
+
+
+model-00004-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:14<00:00, 395MB/s][A
+
+
+model-00001-of-00012.safetensors:  97%|█████████▋| 4.69G/4.85G [00:14<00:00, 346MB/s][A
+
+
+model-00006-of-00012.safetensors:  88%|████████▊ | 4.36G/4.95G [00:14<00:01, 328MB/s][A
+model-00004-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:14<00:00, 345MB/s]
+
+
+
+model-00009-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+model-00001-of-00012.safetensors: 100%|██████████| 4.85G/4.85G [00:14<00:00, 330MB/s]
+
+
+
+Fetching 12 files:   8%|▊         | 1/12 [00:14<02:42, 14.78s/it][A
+
+
+model-00010-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00003-of-00012.safetensors:  95%|█████████▍| 4.69G/4.95G [00:14<00:00, 342MB/s][A
+model-00008-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:14<00:00, 332MB/s]
+
+
+
+model-00011-of-00012.safetensors:   0%|          | 0.00/4.95G [00:00<?, ?B/s][A
+
+
+model-00002-of-00012.safetensors:  89%|████████▉ | 4.43G/4.95G [00:15<00:01, 311MB/s][A
+
+
+model-00009-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+
+
+model-00006-of-00012.safetensors:  96%|█████████▌| 4.76G/4.95G [00:15<00:00, 330MB/s][A
+model-00003-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:15<00:00, 319MB/s]
+
+
+
+model-00012-of-00012.safetensors:   0%|          | 0.00/462M [00:00<?, ?B/s][A
+
+
+model-00005-of-00012.safetensors:  96%|█████████▌| 4.76G/4.95G [00:15<00:00, 324MB/s][A
+
+
+model-00010-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+model-00006-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:15<00:00, 311MB/s]
+
+
+
+model-00007-of-00012.safetensors:  85%|████████▌ | 4.22G/4.95G [00:15<00:02, 271MB/s][A
+
+
+model-00011-of-00012.safetensors:   0%|          | 0.00/4.95G [00:01<?, ?B/s][A
+model-00005-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:16<00:00, 308MB/s]
+
+
+
+model-00002-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:16<00:00, 346MB/s][A
+model-00002-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:16<00:00, 303MB/s]
+
+
+
+Fetching 12 files:  17%|█▋        | 2/12 [00:16<01:10,  7.03s/it][A
+
+
+model-00012-of-00012.safetensors:   0%|          | 0.00/462M [00:01<?, ?B/s][A
+
+
+model-00009-of-00012.safetensors:   4%|▍         | 201M/4.95G [00:02<00:28, 166MB/s][A
+
+
+model-00010-of-00012.safetensors:   4%|▍         | 201M/4.95G [00:02<00:28, 168MB/s][A
+
+
+model-00011-of-00012.safetensors:   7%|▋         | 335M/4.95G [00:02<00:16, 278MB/s][A
+
+
+model-00007-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:17<00:00, 319MB/s][A
+model-00007-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:17<00:00, 286MB/s]
+
+
+
+model-00012-of-00012.safetensors:  14%|█▍        | 67.0M/462M [00:02<00:07, 56.0MB/s][A
+
+
+model-00009-of-00012.safetensors:   9%|▉         | 469M/4.95G [00:03<00:22, 201MB/s][A
+
+
+model-00010-of-00012.safetensors:   7%|▋         | 335M/4.95G [00:03<00:30, 150MB/s][A
+
+
+model-00011-of-00012.safetensors:  14%|█▎        | 671M/4.95G [00:03<00:13, 309MB/s][A
+
+
+model-00012-of-00012.safetensors:  72%|███████▏  | 335M/462M [00:03<00:00, 171MB/s]  [A
+
+
+model-00010-of-00012.safetensors:  22%|██▏       | 1.07G/4.95G [00:04<00:09, 407MB/s][A
+
+
+model-00009-of-00012.safetensors:  21%|██        | 1.02G/4.95G [00:04<00:12, 319MB/s][A
+
+
+model-00011-of-00012.safetensors:  24%|██▍       | 1.21G/4.95G [00:04<00:09, 406MB/s][A
+model-00012-of-00012.safetensors: 100%|██████████| 462M/462M [00:03<00:00, 127MB/s]
+
+
+
+model-00009-of-00012.safetensors:  49%|████▊     | 2.41G/4.95G [00:05<00:03, 640MB/s][A
+
+
+model-00010-of-00012.safetensors:  43%|████▎     | 2.15G/4.95G [00:05<00:04, 603MB/s][A
+
+
+model-00011-of-00012.safetensors:  37%|███▋      | 1.81G/4.95G [00:05<00:06, 476MB/s][A
+
+
+model-00010-of-00012.safetensors:  60%|█████▉    | 2.95G/4.95G [00:06<00:03, 640MB/s][A
+
+
+model-00011-of-00012.safetensors:  60%|█████▉    | 2.95G/4.95G [00:06<00:02, 674MB/s][A
+
+
+model-00009-of-00012.safetensors:  65%|██████▍   | 3.22G/4.95G [00:07<00:02, 621MB/s][A
+
+
+model-00010-of-00012.safetensors:  88%|████████▊ | 4.36G/4.95G [00:07<00:00, 879MB/s][A
+
+
+model-00011-of-00012.safetensors:  76%|███████▌  | 3.76G/4.95G [00:07<00:01, 716MB/s][A
+
+
+model-00009-of-00012.safetensors:  92%|█████████▏| 4.56G/4.95G [00:08<00:00, 743MB/s][A
+model-00010-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:08<00:00, 600MB/s]
+
+
+model-00009-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:09<00:00, 538MB/s]
+
+
+
+Fetching 12 files:  75%|███████▌  | 9/12 [00:23<00:05,  1.91s/it][A
+
+
+model-00011-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:09<00:00, 660MB/s][A
+model-00011-of-00012.safetensors: 100%|██████████| 4.95G/4.95G [00:09<00:00, 527MB/s]
+
+
+Fetching 12 files: 100%|██████████| 12/12 [00:24<00:00,  2.04s/it]
+
+
+
+Loading checkpoint shards:   0%|          | 0/12 [00:00<?, ?it/s][A
+
+
+Loading checkpoint shards:   8%|▊         | 1/12 [00:03<00:35,  3.24s/it][A
+
+
+Loading checkpoint shards:  17%|█▋        | 2/12 [00:09<00:49,  4.97s/it][A
+
+
+Loading checkpoint shards:  25%|██▌       | 3/12 [00:15<00:49,  5.50s/it][A
+
+
+Loading checkpoint shards:  33%|███▎      | 4/12 [00:21<00:46,  5.77s/it][A
+
+
+Loading checkpoint shards:  42%|████▏     | 5/12 [00:27<00:41,  5.90s/it][A
+
+
+Loading checkpoint shards:  50%|█████     | 6/12 [00:33<00:35,  5.97s/it][A
+
+
+Loading checkpoint shards:  58%|█████▊    | 7/12 [00:40<00:29,  5.99s/it][A
+
+
+Loading checkpoint shards:  67%|██████▋   | 8/12 [00:46<00:24,  6.02s/it][A
+
+
+Loading checkpoint shards:  75%|███████▌  | 9/12 [00:52<00:18,  6.12s/it][A
+
+
+Loading checkpoint shards:  83%|████████▎ | 10/12 [00:58<00:12,  6.18s/it][A
+
+
+Loading checkpoint shards:  92%|█████████▏| 11/12 [01:04<00:06,  6.19s/it][A
+Loading checkpoint shards: 100%|██████████| 12/12 [01:05<00:00,  5.46s/it]
+
+
+
+generation_config.json:   0%|          | 0.00/215 [00:00<?, ?B/s][A
+generation_config.json: 100%|██████████| 215/215 [00:00<00:00, 2.35MB/s]
+
+[hf-jobs-train] connecting to remote env: https://dhiwakardev-openenv.hf.space
+
+[hf-jobs-train] remote env connected.
+
+[hf-jobs-train] dataset rows: 20
+
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'eos_token_id': 1, 'bos_token_id': 2, 'pad_token_id': 0}.
+
+The `TRACKIO_PROJECT` environment variable is deprecated and will be removed in a future version. Use TrainingArguments.project instead.
+
+The `TRACKIO_SPACE_ID` environment variable is deprecated and will be removed in a future version. Use TrainingArguments.trackio_space_id instead.
+
+* Trackio project initialized: mcm-gemma3-27b-full
+
+* Trackio metrics will be synced to Hugging Face Dataset: DhiwakarDev/mcm-trackio-dataset
+
+* Found existing space: https://huggingface.co/spaces/DhiwakarDev/mcm-trackio
+
+* View dashboard by going to: https://DhiwakarDev-mcm-trackio.hf.space/
+
+* Created new run: ticket_booking-20260426-073634
+
+
+[rollout] sample0 task=ticket_booking comp_len=192 turns=1 elapsed=55.0s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.0, "tool_fidelity": 0.0, "tool_economy": 0.0, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.0, "tool_fidelity": 0.0, "tool_economy": 0.0, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.0, "tool_fidelity": 0.0, "tool_economy": 0.0, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.0, "tool_fidelity": 0.0, "tool_economy": 0.0, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.0, "tool_fidelity": 0.0, "tool_economy": 0.0, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+
+  0%|          | 0/20 [00:00<?, ?it/s][ACould not estimate the number of tokens of the input, floating-point operations will not be computed
+
+
+
+  5%|▌         | 1/20 [08:23<2:39:31, 503.74s/it][A
+
+
+                                                 
+[A
+
+{'loss': -0.082, 'grad_norm': 0.65625, 'learning_rate': 5e-06, 'num_tokens': 11906.0, 'completions/mean_length': 217.25, 'completions/min_length': 192.0, 'completions/max_length': 265.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.18652498722076416, 'rewards/reward_fn/std': 0.031596191227436066, 'reward': 0.18652498722076416, 'reward_std': 0.031596191227436066, 'frac_reward_zero_std': 0.0, 'entropy': 0.050833559362217784, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 502.6263576745987, 'epoch': 0.2}
+
+step=1 >>> reward=0.1865 <<< >>> loss=-0.0820 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=331 turns=2 elapsed=71.6s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.01, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.0}
+
+
+  5%|▌         | 1/20 [08:23<2:39:31, 503.74s/it][A
+
+
+ 10%|█         | 2/20 [18:39<2:50:57, 569.84s/it][A
+
+{'loss': -0.0033, 'grad_norm': 0.55078125, 'learning_rate': 4.75e-06, 'num_tokens': 24182.0, 'completions/mean_length': 263.5, 'completions/min_length': 257.0, 'completions/max_length': 267.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.23199999332427979, 'rewards/reward_fn/std': 0.014101674780249596, 'reward': 0.23199999332427979, 'reward_std': 0.014101671054959297, 'frac_reward_zero_std': 0.0, 'entropy': 0.07484877062961459, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 615.281208999455, 'epoch': 0.4}
+
+
+                                                 
+[A
+
+step=2 >>> reward=0.2320 <<< >>> loss=-0.0033 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=329 turns=2 elapsed=72.0s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+
+ 10%|█         | 2/20 [18:39<2:50:57, 569.84s/it][A
+
+
+ 15%|█▌        | 3/20 [29:20<2:50:35, 602.09s/it][A
+
+{'loss': 0.0003, 'grad_norm': 0.470703125, 'learning_rate': 4.5e-06, 'num_tokens': 36475.0, 'completions/mean_length': 265.625, 'completions/min_length': 265.0, 'completions/max_length': 267.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.24002498388290405, 'rewards/reward_fn/std': 0.00502614863216877, 'reward': 0.24002498388290405, 'reward_std': 0.0050261495634913445, 'frac_reward_zero_std': 0.25, 'entropy': 0.0826285844668746, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 639.6480810418725, 'epoch': 0.6}
+
+
+                                                 
+[A
+
+step=3 >>> reward=0.2400 <<< >>> loss=0.0003 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=329 turns=2 elapsed=72.9s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.017}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+
+ 15%|█▌        | 3/20 [29:20<2:50:35, 602.09s/it][A
+
+
+ 20%|██        | 4/20 [39:24<2:40:49, 603.11s/it][A
+
+{'loss': 0.0012, 'grad_norm': 0.236328125, 'learning_rate': 4.25e-06, 'num_tokens': 48766.0, 'completions/mean_length': 265.375, 'completions/min_length': 261.0, 'completions/max_length': 268.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.24392500519752502, 'rewards/reward_fn/std': 0.0014849219005554914, 'reward': 0.24392500519752502, 'reward_std': 0.001484919455833733, 'frac_reward_zero_std': 0.25, 'entropy': 0.07993626687675714, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 603.8051848486066, 'epoch': 0.8}
+
+
+                                                 
+[A
+
+step=4 >>> reward=0.2439 <<< >>> loss=0.0012 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=332 turns=2 elapsed=74.8s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+
+ 20%|██        | 4/20 [39:24<2:40:49, 603.11s/it][A
+
+
+ 25%|██▌       | 5/20 [49:36<2:31:33, 606.24s/it][A
+
+{'loss': -0.0013, 'grad_norm': 0.388671875, 'learning_rate': 4.000000000000001e-06, 'num_tokens': 61092.0, 'completions/mean_length': 269.75, 'completions/min_length': 265.0, 'completions/max_length': 276.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.24274998903274536, 'rewards/reward_fn/std': 0.009910313412547112, 'reward': 0.24274998903274536, 'reward_std': 0.00991031713783741, 'frac_reward_zero_std': 0.0, 'entropy': 0.08023216295987368, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 610.9456158131361, 'epoch': 1.0}
+
+
+                                                 
+[A
+
+step=5 >>> reward=0.2427 <<< >>> loss=-0.0013 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=325 turns=2 elapsed=71.4s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+
+ 25%|██▌       | 5/20 [49:36<2:31:33, 606.24s/it][A
+
+
+ 30%|███       | 6/20 [59:44<2:21:34, 606.75s/it][A
+
+
+                                                 
+[A
+
+{'loss': 0.0066, 'grad_norm': 0.3203125, 'learning_rate': 3.7500000000000005e-06, 'num_tokens': 73404.0, 'completions/mean_length': 268.0, 'completions/min_length': 261.0, 'completions/max_length': 277.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.24252499639987946, 'rewards/reward_fn/std': 0.003501736093312502, 'reward': 0.24252499639987946, 'reward_std': 0.0035017395857721567, 'frac_reward_zero_std': 0.5, 'entropy': 0.08021512348204851, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 606.9260889701545, 'epoch': 1.2}
+
+step=6 >>> reward=0.2425 <<< >>> loss=0.0066 <<<
+
+[rollout] sample0 task=ticket_booking comp_len=339 turns=2 elapsed=73.1s
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.03, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.0, "clarity": 0.013999999999999999}
+
+breakdown: {"task_success": 0.0, "tool_sequence": 0.020000000000000004, "tool_fidelity": 0.05, "tool_economy": 0.03, "format": 0.02, "conversation_quality": 0.0, "turn_efficiency": 0.1, "payment_discipline": 0.0, "politeness": 0.009999999999999998, "clarity": 0.0122}
+
+
+ 30%|███       | 6/20 [59:44<2:21:34, 606.75s/it][A
+
+
+ 35%|███▌      | 7/20 [1:09:54<2:11:42, 607.86s/it][A
+
+{'loss': 0.0003, 'grad_norm': 0.189453125, 'learning_rate': 3.5e-06, 'num_tokens': 85708.0, 'completions/mean_length': 267.0, 'completions/min_length': 261.0, 'completions/max_length': 275.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/reward_fn/mean': 0.24502500891685486, 'rewards/reward_fn/std': 0.008407777175307274, 'reward': 0.24502500891685486, 'reward_std': 0.008407780900597572, 'frac_reward_zero_std': 0.5, 'entropy': 0.07892773859202862, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'step_time': 609.3357777409256, 'epoch': 1.4}
+
+
+                                                   
+[A
+
+step=7 >>> reward=0.2450 <<< >>> loss=0.0003 <<<
+
+
+ 35%|███▌      | 7/20 [1:09:54<2:11:42, 607.86s/it][A
