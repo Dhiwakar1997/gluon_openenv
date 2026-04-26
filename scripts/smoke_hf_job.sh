@@ -50,7 +50,7 @@ submit_phase() {
     -e ENV_BASE_URL="${ENV_BASE_URL}" \
     -e TRACKIO_SPACE_ID="${TRACKIO_SPACE_ID}" \
     -e TRL_EXPERIMENTAL_SILENCE=1 \
-    pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel \
+    pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel \
     -- \
     bash -lc "$(build_payload "${phase}")"
 }
