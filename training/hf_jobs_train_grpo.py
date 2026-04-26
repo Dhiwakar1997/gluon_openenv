@@ -41,9 +41,16 @@ from training.rollout import (  # noqa: E402
 
 
 PHASE_TASKS = {
-    "A": ["ticket_booking"],
-    "B": ["ticket_issuance"],
-    "C": ["crowd_announcement"],
+    "ticket_booking": ["ticket_booking"],
+    "ticket_issuance": ["ticket_issuance"],
+    "crowd_announcement": ["crowd_announcement"],
+}
+
+# Backwards-compatible aliases for the old A/B/C phase letters.
+PHASE_ALIASES = {
+    "A": "ticket_booking",
+    "B": "ticket_issuance",
+    "C": "crowd_announcement",
 }
 
 
@@ -64,7 +71,13 @@ def _validate_grpo_shape(args: argparse.Namespace) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--phase", choices=list(PHASE_TASKS), default="A")
+    p.add_argument(
+        "--phase",
+        choices=list(PHASE_TASKS) + list(PHASE_ALIASES),
+        default="ticket_booking",
+        help="Task to train on. Use the task name (ticket_booking, "
+             "ticket_issuance, crowd_announcement) or the legacy A/B/C alias.",
+    )
     p.add_argument("--model", default="google/gemma-3-27b-it")
     p.add_argument("--env-base-url", default=os.getenv("ENV_BASE_URL"),
                    help="WS/HTTP base URL of the deployed MetroCrowdManager OpenEnv Space.")
@@ -87,6 +100,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-trackio", action="store_true")
     p.add_argument("--push-to-hub-id", default=None,
                    help="Hub repo (user/repo) to push final LoRA adapters to.")
+    p.add_argument("--debug-mode", type=int, choices=[0, 1], default=0,
+                   help="1 = print full per-sample rollout trace (USER PROMPT, "
+                        "AGENT RESPONSE, TOOL CALLS, etc.). "
+                        "0 = print only the breakdown JSON + highlighted "
+                        "reward/loss from the trainer log dict.")
     return p.parse_args()
 
 
@@ -233,6 +251,7 @@ def make_remote_reward_fn(args, log_csv: str, trackio_enabled: bool):
             csv_handle.write("step,task,reward,breakdown_json\n")
 
     step_counter = {"n": 0}
+    debug_mode = bool(getattr(args, "debug_mode", 0))
 
     def _per_sample(kwargs: Dict[str, Any], idx: int, key: str, default: Any) -> Any:
         values = kwargs.get(key)
@@ -274,25 +293,31 @@ def make_remote_reward_fn(args, log_csv: str, trackio_enabled: bool):
                 _per_sample(kwargs, sample_idx - 1, "rollout_system_prompt", "") or ""
             )
 
-            replay_result = make_replay_result_from_rollout(
-                turn_history=turn_history,
-                final_text=final_text,
-                reward=r,
-                breakdown=breakdown,
-                initial_observation=initial_obs,
-                raw_completion=raw_completion,
-                system_prompt=system_prompt,
-            )
-
-            print(
-                format_training_debug_log(
-                    step=step_counter["n"],
-                    sample_idx=sample_idx,
-                    task_name=task_name,
-                    replay_result=replay_result,
-                ),
-                flush=True,
-            )
+            if debug_mode:
+                replay_result = make_replay_result_from_rollout(
+                    turn_history=turn_history,
+                    final_text=final_text,
+                    reward=r,
+                    breakdown=breakdown,
+                    initial_observation=initial_obs,
+                    raw_completion=raw_completion,
+                    system_prompt=system_prompt,
+                )
+                print(
+                    format_training_debug_log(
+                        step=step_counter["n"],
+                        sample_idx=sample_idx,
+                        task_name=task_name,
+                        replay_result=replay_result,
+                    ),
+                    flush=True,
+                )
+            else:
+                # Quiet mode: just dump the breakdown JSON per sample.
+                print(
+                    f"breakdown: {json.dumps(breakdown)}",
+                    flush=True,
+                )
 
             if csv_handle:
                 csv_handle.write(
@@ -339,12 +364,16 @@ def make_remote_reward_fn(args, log_csv: str, trackio_enabled: bool):
 
 def main() -> None:
     args = parse_args()
+    # Resolve legacy A/B/C aliases to canonical task names so all downstream
+    # lookups (PHASE_TASKS, run_name, output paths) see the same key.
+    if args.phase in PHASE_ALIASES:
+        args.phase = PHASE_ALIASES[args.phase]
     _validate_grpo_shape(args)
     random.seed(args.seed)
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     trackio_enabled = not args.no_trackio
-    run_name = f"phase{args.phase}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    run_name = f"{args.phase}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     if trackio_enabled:
         try:
             import trackio  # noqa: F401
@@ -431,6 +460,28 @@ def main() -> None:
             reward_funcs=[reward_fn],
             rollout_func=rollout_func,
         )
+
+        # In quiet mode (--debug-mode 0), spotlight reward + loss from each
+        # per-step log dict so they're easy to scan in HF Jobs logs.
+        if not bool(getattr(args, "debug_mode", 0)):
+            from transformers import TrainerCallback
+
+            class HighlightRewardLossCallback(TrainerCallback):
+                def on_log(self, log_args, state, control, logs=None, **_):
+                    if not logs:
+                        return
+                    loss = logs.get("loss")
+                    reward = logs.get("reward", logs.get("rewards/reward_fn/mean"))
+                    if loss is None and reward is None:
+                        return
+                    parts = [f"step={state.global_step}"]
+                    if reward is not None:
+                        parts.append(f">>> reward={reward:.4f} <<<")
+                    if loss is not None:
+                        parts.append(f">>> loss={loss:.4f} <<<")
+                    print(" ".join(parts), flush=True)
+
+            trainer.add_callback(HighlightRewardLossCallback())
 
         t0 = time.time()
         trainer.train()
