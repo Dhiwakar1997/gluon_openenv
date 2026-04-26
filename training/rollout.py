@@ -64,6 +64,8 @@ Tool results will be returned in the next user message inside
 with plain text containing NO <tool_call> blocks.
 
 TOOL ARGUMENT RULES (apply to every <tool_call>):
+- Every tool call MUST include the closing </tool_call> tag.
+  Never output an incomplete <tool_call> block.
 - "arguments" must be a JSON object whose keys EXACTLY match the parameter
   names listed for each tool below.
 - Do NOT rename, alias, or invent keys (e.g. `origin_station`,
@@ -82,6 +84,10 @@ Available tools (call ONLY with the parameter names shown):
     {"valid": bool, "normalized": str|null, "destination": str}.
     Example: <tool_call>{"name": "validate_destination", "arguments": {"destination": "greenfield"}}</tool_call>
 
+  * list_valid_stations() — full station list and source. No arguments.
+    Returns {"stations": [str...], "source_station": str}.
+    Example: <tool_call>{"name": "list_valid_stations", "arguments": {}}</tool_call>
+
   * get_ticket_cost(source: str, destination: str, passenger_count: int) —
     quote the fare. Returns {"cost": number|null, "currency": "INR",
     "found": bool, "source": str, "destination": str, "passenger_count": int}.
@@ -96,10 +102,6 @@ Available tools (call ONLY with the parameter names shown):
     success/failed after a few polls. Returns {"payment_id": str,
     "status": "pending"|"success"|"failed"|"unknown"}.
     Example: <tool_call>{"name": "check_payment_status", "arguments": {"payment_id": "PAY-abc123"}}</tool_call>
-
-  * list_valid_stations() — full station list and source. No arguments.
-    Returns {"stations": [str...], "source_station": str}.
-    Example: <tool_call>{"name": "list_valid_stations", "arguments": {}}</tool_call>
 
   * get_current_time() — station-system time as HH:MM. No arguments.
     Returns {"time": "HH:MM"}.
@@ -175,14 +177,17 @@ SYSTEM_PROMPTS: Dict[str, str] = {
         "Workflow rules:\n"
         "  1. Read the passenger's latest message carefully and extract any details they\n"
         "     already provided.\n"
-        "  2. If the destination is already stated, do NOT ask for it again; validate it via\n"
+        "  2. First call `list_valid_stations` to check what this station serves.\n"
+        "  3. If the destination is already stated, do NOT ask for it again; validate it via\n"
         "     `validate_destination` and ask only for missing information such as passenger\n"
         "     count.\n"
-        "  3. Look up the price with `get_ticket_cost` (use the normalized destination).\n"
-        "  4. Only then call `initiate_payment`.\n"
-        "  5. Poll `check_payment_status` (with the same payment_id) a few times until it\n"
+        "  4. Look up the price with `get_ticket_cost` (use the normalized destination).\n"
+        "  5. Only then call `initiate_payment`.\n"
+        "  6. Poll `check_payment_status` (with the same payment_id) a few times until it\n"
         "     resolves to `success` or `failed`. Do not poll more than necessary.\n"
-        "  6. Communicate the outcome politely. If payment failed, offer to retry.\n\n"
+        "  7. Communicate the outcome politely. If payment failed, offer to retry.\n\n"
+        "Required tool order for reward: list_valid_stations -> validate_destination -> "
+        "get_ticket_cost -> initiate_payment -> check_payment_status.\n\n"
         "Stay polite throughout. Do NOT initiate payment before you know both the\n"
         "destination AND the passenger count.\n\n"
         + _TOOL_FORMAT_BLOCK
@@ -336,6 +341,37 @@ class RolloutResult:
     per_step_breakdowns: List[Dict[str, float]] = field(default_factory=list)
 
 
+def _passenger_messages_from_obs(obs: Any) -> List[str]:
+    metadata = getattr(obs, "metadata", {}) or {}
+    passenger_messages = metadata.get("passenger_messages") or []
+    if passenger_messages:
+        return [str(m) for m in passenger_messages if str(m).strip()]
+
+    passenger = getattr(obs, "passenger_message", "") or ""
+    return [passenger] if passenger else []
+
+
+def _append_masked_user_turn(turn_history: List[dict], text: str) -> None:
+    turn_history.append(
+        {
+            "role": "user",
+            "masked": True,
+            "text": text,
+            "tool_calls": [],
+        }
+    )
+
+
+def _strip_tool_call_blocks(text: str) -> str:
+    return _TOOL_CALL_RE.sub("", text or "").strip()
+
+
+def _print_conversation_line(role: str, text: str) -> None:
+    compact = _compact_text(text)
+    if compact:
+        print(f"[conversation][{role}] {compact}")
+
+
 def replay_completion_sync(
     env: Any,
     task_name: str,
@@ -352,6 +388,7 @@ def replay_completion_sync(
     initial_observation = {
         "prompt_text": getattr(obs, "prompt_text", "") or "",
         "passenger_message": getattr(obs, "passenger_message", "") or "",
+        "passenger_messages": _passenger_messages_from_obs(obs),
         "scenario_summary": dict(getattr(obs, "scenario_summary", {}) or {}),
         "current_step": getattr(obs, "current_step", 0),
         "max_steps": getattr(obs, "max_steps", 1),
@@ -364,6 +401,10 @@ def replay_completion_sync(
         )
 
     turn_history: List[dict] = []
+    if task_name == "ticket_booking":
+        for passenger in initial_observation["passenger_messages"]:
+            _append_masked_user_turn(turn_history, passenger)
+
     text = completion_text or ""
     idx = 0
     while True:
@@ -522,13 +563,13 @@ def format_training_debug_log(
     lines.append("---- TASK-SPECIFIC TRACE ----")
 
     if task_name == "ticket_booking":
-        passenger = _compact_text(initial.get("passenger_message", ""))
-        if passenger:
-            lines.append(f"passenger: {passenger}")
         for turn in turn_history:
             text = _compact_text(turn.get("text", ""))
             if text:
-                lines.append(f"ai_assistant: {text}")
+                if turn.get("masked"):
+                    lines.append(f"user_reply_masked: {text}")
+                else:
+                    lines.append(f"ai_assistant: {text}")
 
     elif task_name == "crowd_announcement":
         snapshot = debug_context.get("crowd_snapshot", {}) or {}
@@ -605,16 +646,28 @@ async def agentic_episode_async(
     while True:
         prompt = obs.prompt_text or _fallback_prompt(task_name)
         user_lines = [prompt]
+        passenger_messages = (
+            _passenger_messages_from_obs(obs) if task_name == "ticket_booking" else []
+        )
+        next_passenger_idx = 0
+        if passenger_messages:
+            # The first passenger utterance is already present in the prompt.
+            next_passenger_idx = 1
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": "\n".join(user_lines)},
         ]
         turn_history: List[dict] = []
+        if passenger_messages:
+            _append_masked_user_turn(turn_history, passenger_messages[0])
+            _print_conversation_line("passenger", passenger_messages[0])
         submitted = False
 
         for turn in range(max_turns):
             text = await generate(messages)
             tool_calls = parse_tool_calls(text)
+            if task_name == "ticket_booking":
+                _print_conversation_line("assistant", _strip_tool_call_blocks(text))
 
             if tool_calls:
                 turn_record = {"text": text, "tool_calls": []}
@@ -648,6 +701,25 @@ async def agentic_episode_async(
 
             # No tool calls: treat as final submission for this step.
             turn_history.append({"text": text, "tool_calls": []})
+            if (
+                task_name == "ticket_booking"
+                and next_passenger_idx < len(passenger_messages)
+            ):
+                passenger = passenger_messages[next_passenger_idx]
+                masked_turn = {
+                    "role": "user",
+                    "masked": True,
+                    "text": passenger,
+                    "tool_calls": [],
+                }
+                turn_history.append(masked_turn)
+                messages.append({"role": "assistant", "content": text})
+                messages.append(
+                    {"role": "user", "content": f"Passenger: \"{passenger}\""}
+                )
+                _print_conversation_line("passenger", passenger)
+                next_passenger_idx += 1
+                continue
             submission = SubmitResponseAction(
                 content=text,
                 metadata={"turn_history": turn_history},
@@ -733,16 +805,28 @@ def agentic_episode_sync(
     while True:
         prompt = obs.prompt_text or _fallback_prompt(task_name)
         user_lines = [prompt]
+        passenger_messages = (
+            _passenger_messages_from_obs(obs) if task_name == "ticket_booking" else []
+        )
+        next_passenger_idx = 0
+        if passenger_messages:
+            # The first passenger utterance is already present in the prompt.
+            next_passenger_idx = 1
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": "\n".join(user_lines)},
         ]
         turn_history: List[dict] = []
+        if passenger_messages:
+            _append_masked_user_turn(turn_history, passenger_messages[0])
+            _print_conversation_line("passenger", passenger_messages[0])
         submitted = False
 
         for turn in range(max_turns):
             text = generate_sync(messages)
             tool_calls = parse_tool_calls(text)
+            if task_name == "ticket_booking":
+                _print_conversation_line("assistant", _strip_tool_call_blocks(text))
 
             if tool_calls:
                 turn_record = {"text": text, "tool_calls": []}
@@ -773,6 +857,25 @@ def agentic_episode_sync(
                 continue
 
             turn_history.append({"text": text, "tool_calls": []})
+            if (
+                task_name == "ticket_booking"
+                and next_passenger_idx < len(passenger_messages)
+            ):
+                passenger = passenger_messages[next_passenger_idx]
+                masked_turn = {
+                    "role": "user",
+                    "masked": True,
+                    "text": passenger,
+                    "tool_calls": [],
+                }
+                turn_history.append(masked_turn)
+                messages.append({"role": "assistant", "content": text})
+                messages.append(
+                    {"role": "user", "content": f"Passenger: \"{passenger}\""}
+                )
+                _print_conversation_line("passenger", passenger)
+                next_passenger_idx += 1
+                continue
             obs = env.step(
                 SubmitResponseAction(
                     content=text,
