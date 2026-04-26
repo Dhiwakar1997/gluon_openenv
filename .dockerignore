@@ -1,0 +1,27 @@
+# Env server (lives in the deployed OpenEnv Space, not the training image)
+MetroCrowdManager/server/
+MetroCrowdManager/Dockerfile
+MetroCrowdManager/openenv.yaml
+MetroCrowdManager/inference.py
+MetroCrowdManager/validate.sh
+MetroCrowdManager/uv.lock
+MetroCrowdManager/pyproject.toml
+MetroCrowdManager/README.md
+MetroCrowdManager/openenv_MetroCrowdManager.egg-info/
+
+# Build / cache / outputs
+**/__pycache__/
+**/*.pyc
+.git/
+.venv/
+venv/
+outputs/
+.mypy_cache/
+.pytest_cache/
+.DS_Store
+
+# Repo-level files not needed at training time
+README.md
+plan.md
+scripts/
+.claude/

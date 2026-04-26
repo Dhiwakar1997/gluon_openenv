@@ -1,0 +1,28 @@
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_ENABLE_HF_TRANSFER=1 \
+    TRL_EXPERIMENTAL_SILENCE=1
+
+RUN pip install --upgrade pip && pip install \
+    transformers==4.46.3 \
+    trl==0.12.1 \
+    peft==0.13.2 \
+    bitsandbytes==0.44.1 \
+    accelerate==1.1.1 \
+    datasets \
+    trackio \
+    openenv-core \
+    hf_transfer
+
+WORKDIR /workspace/Gluon
+
+# Training code only — env server (Dockerfile, server/, validate.sh, etc.) lives
+# in the deployed OpenEnv Space, not in this image.
+COPY training/ /workspace/Gluon/training/
+COPY MetroCrowdManager/__init__.py        /workspace/Gluon/MetroCrowdManager/__init__.py
+COPY MetroCrowdManager/client.py          /workspace/Gluon/MetroCrowdManager/client.py
+COPY MetroCrowdManager/models.py          /workspace/Gluon/MetroCrowdManager/models.py
+
+CMD ["python", "training/hf_jobs_train_grpo.py", "--help"]
